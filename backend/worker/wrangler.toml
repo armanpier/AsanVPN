@@ -1,0 +1,18 @@
+name = "asanvpn-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "f00dbc59270d5615cadcab84c18cd9be"
+
+[vars]
+ADMIN_TOKEN = "AsanVpnAdmin2026!Secure"
+DEFAULT_SUPPORT_PHONE = "+989120000000"
+SUPPORT_TELEGRAM = "AsanSupport"
+
+[[kv_namespaces]]
+binding = "VPN_USERS"
+id = "aaf46b23b63c44a0a846911ea4b2aa19"
+
+[triggers]
+crons = ["0 */6 * * *"]
+

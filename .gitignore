@@ -1,0 +1,32 @@
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+app/build/
+*.apk
+*.aab
+*.idsig
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Cloudflare Worker / Node.js
+node_modules/
+.wrangler/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Sensitive / Local Data
+.env
+*.env
+!*.env.example
+user_*.json
+*.log
+*.dump
+
+# OS / IDE
+.vscode/
+Thumbs.db
