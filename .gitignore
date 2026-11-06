@@ -20,6 +20,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Sensitive / Local Data
+*.jks
+*.keystore
 .env
 *.env
 !*.env.example
