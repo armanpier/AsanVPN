@@ -1,7 +1,7 @@
 import { parseSubscriptionText } from './parsers/sub_parser.js';
 import { generateXrayConfig, generateSingBoxConfig } from './parsers/config_generator.js';
 import { PanelAdapter } from './panels/panel_adapter.js';
-import { PanelManager } from './panels/panel_manager.js';
+import { PanelManager, universalFetch } from './panels/panel_manager.js';
 import { DeviceLock } from './auth/device_lock.js';
 import { getAdminDashboardHtml } from './admin_ui.js';
 
@@ -612,6 +612,25 @@ export default {
           user.expires_at = now + (parseInt(body.days, 10) * 86400);
         }
 
+        // Sync updates (status, expiry, limits) to remote proxy panels
+        if (user.remote_panel_mappings && typeof user.remote_panel_mappings === 'object') {
+          try {
+            const panels = await PanelManager.getPanels(env);
+            for (const [panelId, mappingInfo] of Object.entries(user.remote_panel_mappings)) {
+              const panel = panels.find(p => p.id === panelId);
+              if (panel) {
+                await PanelManager.updateRemoteUser(panel, mappingInfo, {
+                  active: user.active,
+                  expires_at: user.expires_at,
+                  traffic_total_bytes: user.traffic_total_bytes
+                });
+              }
+            }
+          } catch (updateRemoteErr) {
+            console.warn(`Could not sync updates to remote panels for PIN ${pin}:`, updateRemoteErr.message);
+          }
+        }
+
         // Live calculation of traffic & expiry from panels
         if (Array.isArray(user.upstream_sub_urls) && user.upstream_sub_urls.length > 0) {
           try {
@@ -883,7 +902,27 @@ export default {
         const body = await request.json().catch(() => ({}));
         const pin = String(body.pin || '').trim();
 
-        await env.VPN_USERS.delete(pin);
+        if (pin) {
+          const raw = await env.VPN_USERS.get(pin);
+          if (raw) {
+            try {
+              const user = JSON.parse(raw);
+              const panels = await PanelManager.getPanels(env);
+              if (user.remote_panel_mappings && typeof user.remote_panel_mappings === 'object') {
+                for (const [panelId, mappingInfo] of Object.entries(user.remote_panel_mappings)) {
+                  const panel = panels.find(p => p.id === panelId);
+                  if (panel) {
+                    await PanelManager.deleteRemoteUser(panel, mappingInfo);
+                  }
+                }
+              }
+            } catch (cleanupErr) {
+              console.warn(`Could not cleanup remote user for PIN ${pin}:`, cleanupErr.message);
+            }
+          }
+          await env.VPN_USERS.delete(pin);
+        }
+
         return new Response(JSON.stringify({
           status: 'deleted',
           pin: pin
@@ -971,6 +1010,19 @@ export default {
         }
         const remoteUsers = await PanelManager.fetchRemoteUsers(panel);
         return new Response(JSON.stringify({ users: remoteUsers }), { headers: corsHeaders });
+      }
+
+      // GET /api/v1/admin/panels/inspect
+      if (path === '/api/v1/admin/panels/inspect' && request.method === 'GET') {
+        const panelId = url.searchParams.get('panel_id');
+        const customPath = url.searchParams.get('path');
+        const panels = await PanelManager.getPanels(env);
+        const panel = panels.find(p => p.id === panelId);
+        if (!panel) {
+          return new Response(JSON.stringify({ error: 'پنل یافت نشد' }), { status: 404, headers: corsHeaders });
+        }
+        const inspectRes = await PanelManager.inspectPanel(panel, customPath);
+        return new Response(JSON.stringify(inspectRes), { headers: corsHeaders });
       }
 
       // 404
