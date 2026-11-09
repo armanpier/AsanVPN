@@ -234,6 +234,7 @@ object AppUpdateManager {
     suspend fun downloadApk(
         context: Context,
         downloadUrl: String,
+        expectedTotalBytes: Long = 0L,
         onProgress: (progress: Float, downloadedMb: Float, totalMb: Float) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
@@ -258,7 +259,21 @@ object AppUpdateManager {
             }
 
             val body = response.body ?: return@withContext Result.failure(Exception("پاسخ دریافتی خالی بود."))
-            val contentLength = body.contentLength()
+            
+            // Resolve actual total content length across multiple sources
+            var contentLength = body.contentLength()
+            if (contentLength <= 0) {
+                val headerLength = response.header("X-Total-Length")?.toLongOrNull()
+                    ?: response.header("X-File-Size")?.toLongOrNull()
+                    ?: response.header("Content-Length")?.toLongOrNull()
+                if (headerLength != null && headerLength > 0) {
+                    contentLength = headerLength
+                }
+            }
+            if (contentLength <= 0 && expectedTotalBytes > 0) {
+                contentLength = expectedTotalBytes
+            }
+
             val totalMb = if (contentLength > 0) contentLength / (1024f * 1024f) else 0f
 
             body.byteStream().use { input ->
@@ -273,9 +288,13 @@ object AppUpdateManager {
                         totalRead += bytesRead
 
                         val now = System.currentTimeMillis()
-                        if (now - lastReportTime > 80 || totalRead == contentLength) {
+                        if (now - lastReportTime > 60 || totalRead == contentLength) {
                             lastReportTime = now
-                            val progress = if (contentLength > 0) (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f) else 0f
+                            val progress = if (contentLength > 0) {
+                                (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
                             val downloadedMb = totalRead / (1024f * 1024f)
                             withContext(Dispatchers.Main) {
                                 onProgress(progress, downloadedMb, totalMb)

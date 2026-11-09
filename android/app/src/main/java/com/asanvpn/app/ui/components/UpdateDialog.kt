@@ -179,7 +179,9 @@ fun UpdateDialog(
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
-                            val percent = (animatedProgress * 100).toInt()
+                            val computedRatio = if (totalMb > 0f) (downloadedMb / totalMb).coerceIn(0f, 1f) else 0f
+                            val effectiveProgress = if (animatedProgress > 0.001f) animatedProgress else computedRatio
+                            val percent = (effectiveProgress * 100).toInt().coerceIn(0, 100)
                             Text(
                                 text = "$percent%",
                                 fontSize = 13.sp,
@@ -190,7 +192,10 @@ fun UpdateDialog(
 
                         // Linear Progress Indicator
                         LinearProgressIndicator(
-                            progress = { animatedProgress },
+                            progress = {
+                                val computedRatio = if (totalMb > 0f) (downloadedMb / totalMb).coerceIn(0f, 1f) else 0f
+                                if (animatedProgress > 0.001f) animatedProgress else computedRatio
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)

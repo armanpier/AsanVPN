@@ -259,6 +259,8 @@ export default {
           'Content-Type': 'application/vnd.android.package-archive',
           'Content-Disposition': `attachment; filename="${meta.filename || 'AsanVPN.apk'}"`,
           'Content-Length': meta.total_size.toString(),
+          'X-Total-Length': meta.total_size.toString(),
+          'X-File-Size': meta.total_size.toString(),
           'Cache-Control': 'public, max-age=86400',
           'Access-Control-Allow-Origin': '*'
         }
