@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private var downloadSpeedState by mutableStateOf("")
     private var uploadSpeedState by mutableStateOf("")
 
+    private var connectJob: Job? = null
     private var optimizationJob: Job? = null
     private var trafficMonitorJob: Job? = null
 
@@ -374,7 +375,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleToggleConnect() {
-        if (connectionState == ConnectionState.CONNECTED) {
+        if (connectionState == ConnectionState.CONNECTED || connectionState == ConnectionState.CONNECTING) {
+            val wasConnecting = connectionState == ConnectionState.CONNECTING
+            AppLogger.logUser(if (wasConnecting) "⏹️ برقراری ارتباط توسط کاربر لغو شد" else "🛑 وی‌پی‌ان خاموش شد")
+            AppLogger.logAdmin("User toggled off VPN (wasConnecting=$wasConnecting)")
             disconnectVpnService()
         } else {
             connectionState = ConnectionState.CONNECTING
@@ -383,9 +387,13 @@ class MainActivity : ComponentActivity() {
             AppLogger.logUser("🔄 درخواست برقراری ارتباط...")
             AppLogger.logAdmin("Toggle connect initiated for PIN: $pin")
 
-            lifecycleScope.launch {
+            connectJob?.cancel()
+            connectJob = lifecycleScope.launch {
                 val result = repository.syncWithWorker(pin)
+                if (!isActive || connectionState != ConnectionState.CONNECTING) return@launch
+
                 result.onSuccess { response ->
+                    if (!isActive || connectionState != ConnectionState.CONNECTING) return@launch
                     response.userInfo?.let { info ->
                         info.name?.let { prefs.userName = it; currentUserName = it }
                         info.daysLeft?.let { prefs.daysLeft = it; currentDaysLeft = it }
@@ -420,7 +428,9 @@ class MainActivity : ComponentActivity() {
                             context = this@MainActivity,
                             nodes = nodes,
                             onFirstOkNode = { firstNode ->
+                                if (!this@launch.isActive) return@connectFastAndOptimize
                                 withContext(Dispatchers.Main) {
+                                    if (connectionState != ConnectionState.CONNECTING) return@withContext
                                     connectionState = ConnectionState.CONNECTED
                                     prefs.isConnected = true
                                     initialConnectedNode = firstNode
@@ -444,7 +454,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onFastestNodeFound = { fastestNode ->
+                                if (!this@launch.isActive) return@connectFastAndOptimize
                                 withContext(Dispatchers.Main) {
+                                    if (connectionState != ConnectionState.CONNECTED) return@withContext
                                     val first = initialConnectedNode
                                     if (first != null && first.remark != fastestNode.remark && fastestNode.latencyMs > 0) {
                                         android.util.Log.i("MainActivity", ">> Optimizing: switching from [${first.remark}] (${first.latencyMs}ms) to fastest [${fastestNode.remark}] (${fastestNode.latencyMs}ms)")
@@ -467,6 +479,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }.onFailure { error ->
+                    if (!isActive || connectionState != ConnectionState.CONNECTING) return@onFailure
                     val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
                         error.message?.let { msg ->
                             msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
@@ -527,8 +540,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun disconnectVpnService() {
-        AppLogger.logUser("🛑 وی‌پی‌ان خاموش شد")
-        AppLogger.logAdmin("VPN Service disconnected by user")
+        connectJob?.cancel()
+        connectJob = null
         optimizationJob?.cancel()
         optimizationJob = null
         stopTrafficMonitoring()

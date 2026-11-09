@@ -145,7 +145,7 @@ fun ConnectScreen(
 
     val statusSubText = when (connectionState) {
         ConnectionState.DISCONNECTED -> "برای روشن شدن وی‌پی‌ان لمس کنید"
-        ConnectionState.CONNECTING -> if (connectingSeconds >= 6) "درحال بررسی لینک‌ها..." else "در حال پیدا کردن سریع‌ترین مسیر..."
+        ConnectionState.CONNECTING -> if (connectingSeconds >= 6) "در حال بررسی لینک‌ها... (برای لغو لمس کنید)" else "در حال اتصال به سرور... (برای لغو لمس کنید)"
         ConnectionState.CONNECTED -> "ترافیک اینترنت شما کاملاً رمزگذاری شده است"
     }
 
@@ -556,8 +556,7 @@ fun ConnectScreen(
                     .clip(CircleShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        enabled = !isConnecting
+                        indication = null
                     ) {
                         onToggleConnect()
                     },
