@@ -21,6 +21,8 @@ import java.net.Socket
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
+class AuthRevokedException(val status: String, override val message: String) : Exception(message)
+
 object CloudflareEdgeTester {
     private val candidateIps = listOf(
         "162.159.153.4",
@@ -224,11 +226,11 @@ class VpnRepository(private val context: Context) {
                         }
                         lastDebugLog = debugLogs.toString()
                         return@withContext Result.success(parsed)
-                    } else if (parsed?.status == "invalid_pin" || parsed?.status == "disabled" || parsed?.status == "expired" || parsed?.status == "device_locked") {
+                    } else if (response.code == 403 || parsed?.status == "invalid_pin" || parsed?.status == "disabled" || parsed?.status == "expired" || parsed?.status == "deleted" || parsed?.status == "device_locked") {
                         isPinRejected = true
-                        rejectionMessageFa = parsed.messageFa ?: "کد اشتراک نامعتبر است یا ظرفیت دستگاه‌های مجاز تکمیل شده است."
+                        rejectionMessageFa = parsed?.messageFa ?: "کد اشتراک نامعتبر است یا توسط مدیر غیرفعال/حذف شده است."
                         lastDebugLog = debugLogs.toString()
-                        return@withContext Result.failure(Exception(rejectionMessageFa))
+                        return@withContext Result.failure(AuthRevokedException(parsed?.status ?: "invalid_pin", rejectionMessageFa))
                     } else if (response.code == 429 || parsed?.status == "rate_limited") {
                         isPinRejected = true
                         val lockUntil = parsed?.lockedUntilTimestamp ?: (System.currentTimeMillis() + ((parsed?.retryAfterSeconds ?: 1800L) * 1000L))
@@ -249,7 +251,7 @@ class VpnRepository(private val context: Context) {
         lastDebugLog = debugLogs.toString()
 
         if (isPinRejected) {
-            Result.failure(Exception(rejectionMessageFa ?: "کد وارد شده صحیح نمی‌باشد."))
+            Result.failure(AuthRevokedException("invalid_pin", rejectionMessageFa ?: "کد وارد شده نامعتبر است یا توسط مدیر حذف شده است."))
         } else {
             // General network failure (VPN is OFF and panel blocked by ISP):
             // Fallback 1: Cached subscription nodes from previous session

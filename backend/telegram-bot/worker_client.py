@@ -156,9 +156,12 @@ class WorkerClient:
                     data = res.json()
                     users = data.get("users", [])
                     tag = str(telegram_id)
+                    tag_prefix = tag[:7] if len(tag) >= 7 else tag
                     for u in users:
                         name = str(u.get("name", ""))
-                        if tag in name and u.get("pin"):
+                        email = str(u.get("email", ""))
+                        u_tid = str(u.get("telegram_id", ""))
+                        if (tag in name or tag in email or u_tid == tag or (tag_prefix and tag_prefix in name)) and u.get("pin"):
                             matched.append(u)
         except Exception as e:
             logger.error(f"Error finding users by telegram_id {telegram_id}: {e}")

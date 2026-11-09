@@ -800,9 +800,13 @@ export default {
           expires_at: expiresAt
         };
 
-        if (Array.isArray(body.panel_ids) && body.panel_ids.length > 0) {
-          userRecord = await PanelManager.assignPanelsToUser(env, userRecord, body.panel_ids, rawUrls);
-        }
+        const allPanels = await PanelManager.getPanels(env);
+        const activePanelIds = allPanels.filter(p => p.autoSync !== false).map(p => p.id);
+        const targetPanelIds = (Array.isArray(body.panel_ids) && body.panel_ids.length > 0)
+          ? body.panel_ids
+          : activePanelIds;
+
+        userRecord = await PanelManager.assignPanelsToUser(env, userRecord, targetPanelIds, rawUrls);
 
         // Live calculation of traffic & expiry from panels
         if (Array.isArray(userRecord.upstream_sub_urls) && userRecord.upstream_sub_urls.length > 0) {
@@ -1042,6 +1046,8 @@ export default {
             try {
               const user = JSON.parse(raw);
               const panels = await PanelManager.getPanels(env);
+
+              // 1. Delete on panels where mapping exists
               if (user.remote_panel_mappings && typeof user.remote_panel_mappings === 'object') {
                 for (const [panelId, mappingInfo] of Object.entries(user.remote_panel_mappings)) {
                   const panel = panels.find(p => p.id === panelId);
@@ -1050,17 +1056,36 @@ export default {
                   }
                 }
               }
+
+              // 2. Also cleanup across all panels by safe username & email
+              const safeName = PanelManager.generateSafeUsername(user);
+              for (const panel of panels) {
+                try {
+                  await PanelManager.deleteRemoteUser(panel, {
+                    username: safeName,
+                    name: user.name,
+                    email: safeName
+                  });
+                } catch (_) {}
+              }
             } catch (cleanupErr) {
               console.warn(`Could not cleanup remote user for PIN ${pin}:`, cleanupErr.message);
             }
           }
           await env.VPN_USERS.delete(pin);
+          await safeKvDelete(env, `rl:${pin}`);
         }
 
         return new Response(JSON.stringify({
           status: 'deleted',
           pin: pin
         }), { headers: corsHeaders });
+      }
+
+      // POST /api/v1/admin/sync_all_users_to_panels
+      if (path === '/api/v1/admin/sync_all_users_to_panels' && request.method === 'POST') {
+        const res = await PanelManager.syncUsersToAllPanels(env);
+        return new Response(JSON.stringify(res), { headers: corsHeaders });
       }
 
       // GET /api/v1/admin/users

@@ -133,6 +133,17 @@ class MainActivity : ComponentActivity() {
             triggerCheckForUpdate(manual = false)
         }
 
+        // Periodic background session check while app is open
+        lifecycleScope.launch {
+            while (isActive) {
+                kotlinx.coroutines.delay(20000L)
+                val pin = currentPinState ?: prefs.savedPin
+                if (!pin.isNullOrBlank()) {
+                    validateUserSession(pin)
+                }
+            }
+        }
+
         setContent {
             AsanVpnTheme {
                 val savedPin = currentPinState
@@ -243,6 +254,48 @@ class MainActivity : ComponentActivity() {
         } else if (connectionState == ConnectionState.CONNECTED) {
             connectionState = ConnectionState.DISCONNECTED
             stopTrafficMonitoring()
+        }
+
+        // Validate user session immediately on resume if logged in
+        val pin = currentPinState ?: prefs.savedPin
+        if (!pin.isNullOrBlank()) {
+            validateUserSession(pin)
+        }
+    }
+
+    private fun kickoutRevokedUser(message: String) {
+        val wasConnected = connectionState == ConnectionState.CONNECTED || AsanVpnService.isRunning
+        disconnectVpnService()
+        prefs.clearAll()
+        currentPinState = null
+        connectionState = ConnectionState.DISCONNECTED
+        isExpired = false
+        isPinSuccess = false
+        isPinLoading = false
+        pinError = message
+        if (wasConnected) {
+            Toast.makeText(this@MainActivity, "اتصال قطع شد: $message", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun validateUserSession(pin: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = repository.syncWithWorker(pin)
+            result.onFailure { error ->
+                val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
+                    error.message?.let { msg ->
+                        msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
+                        msg.contains("invalid") || msg.contains("disabled")
+                    } == true
+
+                if (isRevoked) {
+                    withContext(Dispatchers.Main) {
+                        kickoutRevokedUser(error.message ?: "اشتراک شما توسط مدیر حذف شده است.")
+                    }
+                }
+            }
         }
     }
 
@@ -396,9 +449,21 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }.onFailure { error ->
+                    val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
+                        error.message?.let { msg ->
+                            msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
+                            msg.contains("invalid") || msg.contains("منقضی") || msg.contains("مسدود") ||
+                            msg.contains("expired") || msg.contains("disabled") || msg.contains("device_locked")
+                        } == true
+
+                    if (isRevoked) {
+                        kickoutRevokedUser(error.message ?: "اشتراک شما حذف یا غیرفعال شده است.")
+                        return@launch
+                    }
+
                     val cachedConfig = prefs.activeV2RayConfig
                     if (!cachedConfig.isNullOrBlank()) {
-                        // Upstream panel temporarily unreachable, connect using cached working configuration!
+                        // Upstream panel temporarily unreachable due to network blocking, connect using cached working configuration!
                         val intent = VpnService.prepare(this@MainActivity)
                         if (intent != null) {
                             vpnPermissionLauncher.launch(intent)

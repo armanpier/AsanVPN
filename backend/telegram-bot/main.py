@@ -2345,7 +2345,6 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
             if cand_pin and cand_pin != pin:
                 logger.info(f"Auto-recovered user PIN {cand_pin} for telegram user {user_id}")
                 user_record = u
-                await db.unlink_invalid_pin(pin)
                 pin = cand_pin
                 await db.link_pin_to_user(user_id, cand_pin)
                 all_pins = await db.get_user_all_pins(user_id)
@@ -2353,16 +2352,17 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
                 break
 
         if not recovered:
-            await db.unlink_invalid_pin(pin)
             not_found_text = (
-                f"❌ اطلاعات اشتراک با کد <code>{pin}</code> در سرور یافت نشد.\n\n"
-                "ممکن است این اشتراک منقضی یا حذف شده باشد. در صورت نیاز با پشتیبانی در ارتباط باشید:"
+                f"⚠️ <b>عدم دریافت اطلاعات اشتراک {pin}</b>\n\n"
+                f"در حال حاضر امکان دریافت مشخصات کد <code>{pin}</code> از سرورهای ابری میسر نشد.\n"
+                "اشتراک شما در دیتابیس محفوظ است. می‌توانید مجدداً استعلام بگیرید یا از منوی زیر استفاده نمایید:"
             )
             not_found_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🛒 خرید اشتراک جدید", callback_data="buy_new_plan", style="danger")],
-                [InlineKeyboardButton("🔍 استعلام کد دستی دیگر", callback_data="status_manual_input", style="primary")],
-                [InlineKeyboardButton("💬 پشتیبانی تلگرام", url=f"https://t.me/{support_username.lstrip('@')}", style="primary")],
-                [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")]
+                [InlineKeyboardButton("🔄 استعلام مجدد", callback_data=f"status_view_pin:{pin}")],
+                [InlineKeyboardButton("🔍 استعلام با کد دستی", callback_data="status_manual_input")],
+                [InlineKeyboardButton("🛒 خرید اشتراک جدید", callback_data="buy_new_plan")],
+                [InlineKeyboardButton("💬 پشتیبانی تلگرام", url=f"https://t.me/{support_username.lstrip('@')}")],
+                [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home")]
             ])
             await msg.edit_text(not_found_text, reply_markup=not_found_kb, parse_mode=ParseMode.HTML)
             return

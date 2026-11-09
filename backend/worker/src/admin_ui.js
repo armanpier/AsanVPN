@@ -81,11 +81,23 @@ export function getAdminDashboardHtml() {
       .modal-backdrop {
         padding: 0.5rem;
         align-items: center;
+        overflow-x: hidden;
       }
       .modal-card {
-        max-width: 100% !important;
+        width: 100% !important;
+        max-width: calc(100vw - 1rem) !important;
         max-height: 94dvh !important;
         border-radius: 1.25rem;
+        margin: auto !important;
+        box-sizing: border-box !important;
+      }
+      .modal-body {
+        padding: 1rem 0.875rem !important;
+      }
+      input, select, textarea {
+        font-size: 13px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
       }
     }
     .modal-header {
@@ -435,7 +447,7 @@ export function getAdminDashboardHtml() {
 
         <div id="panel-form-sub-base-container">
           <label class="block text-xs text-slate-300 mb-1">قالب لینک ساب‌اسکریپشن (اختیاری برای ساخت لینک)</label>
-          <input type="text" id="panel-form-sub-base" placeholder="https://13.140.94.235:2096/xx11fs28c0ea3gr5/{subId}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
+          <input type="text" id="panel-form-sub-base" dir="ltr" placeholder="https://95.182.87.115:2016/xx11fs28c0ea3gr5/{subId}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
           <p class="text-[11px] text-slate-500 mt-1">از عبارت <code class="text-indigo-400 font-mono">{subId}</code> به عنوان جایگزین کد ساب استفاده کنید.</p>
         </div>
 

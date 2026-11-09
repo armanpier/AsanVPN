@@ -14,10 +14,13 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.asanvpn.app.MainActivity
 import com.asanvpn.app.data.PreferencesManager
+import com.asanvpn.app.data.VpnRepository
 import com.asanvpn.app.service.v2ray.V2RayCoreManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +30,7 @@ class AsanVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var prefs: PreferencesManager
+    private var sessionValidatorJob: Job? = null
 
     companion object {
         const val ACTION_CONNECT = "com.asanvpn.app.CONNECT"
@@ -131,6 +135,35 @@ class AsanVpnService : VpnService() {
             isRunning = true
             prefs.isConnected = true
 
+            // Periodic session check: if PIN is deleted or disabled on server while connected, kill tunnel immediately
+            sessionValidatorJob?.cancel()
+            sessionValidatorJob = serviceScope.launch {
+                val repo = VpnRepository(this@AsanVpnService)
+                while (isRunning && isActive) {
+                    kotlinx.coroutines.delay(25000L)
+                    val pin = prefs.savedPin
+                    if (pin.isNullOrBlank()) {
+                        Log.i("AsanVpnService", "No saved PIN found, stopping VPN tunnel")
+                        stopVpnTunnel()
+                        break
+                    }
+                    val res = repo.syncWithWorker(pin)
+                    res.onFailure { error ->
+                        val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
+                            error.message?.let { msg ->
+                                msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
+                                msg.contains("invalid") || msg.contains("disabled")
+                            } == true
+
+                        if (isRevoked) {
+                            Log.w("AsanVpnService", "Session revoked on server! Killing VPN tunnel...")
+                            prefs.clearAll()
+                            stopVpnTunnel()
+                        }
+                    }
+                }
+            }
+
             // Start foreground notification safely
             try {
                 val notification = buildNotification()
@@ -154,6 +187,9 @@ class AsanVpnService : VpnService() {
     }
 
     private fun stopVpnTunnel() {
+        sessionValidatorJob?.cancel()
+        sessionValidatorJob = null
+
         isRunning = false
         prefs.isConnected = false
 

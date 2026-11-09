@@ -141,9 +141,24 @@ export const DEFAULT_INITIAL_PANELS = [
     id: 'panel_3xui_default',
     name: 'سرور ۳X-UI اصلی',
     type: '3xui',
-    url: 'https://13.140.84.27:14393/eX6Vvc2csV2GKtzmPF',
+    url: 'https://95.182.87.115:14393/eX6Vvc2csV2GKtzmPF',
     apiKey: 'Wg6BrJKRiJzcNr4NKnjlxjZSAxMUIYkh7lzvWUDUQn3gxmW9',
-    subBaseUrl: 'https://13.140.84.27:2096/xx11fs28c0ea3gr5/{subId}',
+    subBaseUrl: 'https://95.182.87.115:2016/xx11fs28c0ea3gr5/{subId}',
+    priority: 1,
+    autoSync: true,
+    lastSync: null,
+    lastSyncStatus: null,
+    lastSyncMessage: null,
+    userCount: 0,
+    createdAt: 1792620000
+  },
+  {
+    id: 'panel_pasarguard_default',
+    name: 'سرور پاسارگاد (PasarGuard)',
+    type: 'pasarguard',
+    url: 'https://irtun.darklink.ir:8000',
+    apiKey: 'pg_key_f85f5abb-13cc-4dc5-b3fc-8a77c2026e94',
+    subBaseUrl: 'https://irsub.trafficfast.ir:9090',
     priority: 2,
     autoSync: true,
     lastSync: null,
@@ -182,14 +197,14 @@ export class PanelManager {
       }
     }
 
-    // Auto-migrate any stored old VPS IP references to the new VPS IP
+    // Auto-migrate any stored old VPS IP references to the new VPS IP (95.182.87.115) and port 2016
     for (const p of panels) {
-      if (p.url && p.url.includes('13.140.94.235')) {
-        p.url = p.url.replace(/13\.140\.94\.235/g, '13.140.84.27');
+      if (p.url && (p.url.includes('13.140.94.235') || p.url.includes('13.140.84.27'))) {
+        p.url = p.url.replace(/13\.140\.(94\.235|84\.27)/g, '95.182.87.115');
         needsSave = true;
       }
-      if (p.subBaseUrl && p.subBaseUrl.includes('13.140.94.235')) {
-        p.subBaseUrl = p.subBaseUrl.replace(/13\.140\.94\.235/g, '13.140.84.27');
+      if (p.subBaseUrl && (p.subBaseUrl.includes('13.140.94.235') || p.subBaseUrl.includes('13.140.84.27') || p.subBaseUrl.includes(':2096'))) {
+        p.subBaseUrl = p.subBaseUrl.replace(/13\.140\.(94\.235|84\.27)/g, '95.182.87.115').replace(':2096', ':2016');
         needsSave = true;
       }
     }
@@ -468,7 +483,7 @@ export class PanelManager {
     if (/^[a-z0-9_]{3,30}$/.test(rawName)) {
       return rawName;
     }
-    const asciiPart = rawName.replace(/[^a-z0-9]/g, '').slice(0, 15);
+    const asciiPart = rawName.replace(/[^a-z0-9]/g, '').slice(0, 24);
     const pinPart = String(userRecord.pin || '').slice(-6);
     if (asciiPart.length >= 3) {
       return `${asciiPart}_${pinPart}`;
@@ -580,8 +595,8 @@ export class PanelManager {
       const expiryMs = expireSec ? expireSec * 1000 : 0;
 
       const addClientUrl = url.includes('/panel')
-        ? `${url}/api/inbounds/addClient`
-        : `${url}/panel/api/inbounds/addClient`;
+        ? `${url}/api/clients/add`
+        : `${url}/panel/api/clients/add`;
 
       const clientObj = {
         id: clientUuid,
@@ -596,6 +611,11 @@ export class PanelManager {
         reset: 0
       };
 
+      const addPayload = {
+        client: clientObj,
+        inboundIds: [targetInbound.id]
+      };
+
       const addResText = await universalFetch(addClientUrl, {
         method: 'POST',
         headers: {
@@ -603,24 +623,21 @@ export class PanelManager {
           'Cookie': `session=${apiKey}`,
           'Authorization': `Bearer ${apiKey}`
         },
-        body: JSON.stringify({
-          id: targetInbound.id,
-          settings: JSON.stringify({ clients: [clientObj] })
-        })
+        body: JSON.stringify(addPayload)
       });
 
       let addRes = {};
       try { addRes = JSON.parse(addResText); } catch (_) {}
-      if (addRes && addRes.success === false) {
-        throw new Error(`3X-UI addClient failed: ${addRes.msg || addResText}`);
+      if (addRes && addRes.success === false && !String(addRes.msg || '').includes('already exists')) {
+        console.warn(`3X-UI add client warning: ${addRes.msg || addResText}`);
       }
 
       let subUrl = '';
       if (subBase) {
-        subUrl = subBase.replace('{subId}', subId);
+        subUrl = subBase.replace(':2096', ':2016').replace('{subId}', subId);
       } else {
         const host = new URL(url).hostname;
-        subUrl = `https://${host}:2096/xx11fs28c0ea3gr5/${subId}`;
+        subUrl = `https://${host}:2016/xx11fs28c0ea3gr5/${subId}`;
       }
 
       return {
@@ -764,19 +781,40 @@ export class PanelManager {
           });
         }
       } else if (type === '3xui') {
+        const username = remoteInfo.username || remoteInfo.name || remoteInfo.email;
         const clientUuid = remoteInfo.clientUuid || remoteInfo.id;
+
+        // 1. Delete by username/email via Sanaei /panel/api/clients/del/:email
+        if (username) {
+          const delEmailUrl = url.includes('/panel')
+            ? `${url}/api/clients/del/${encodeURIComponent(username)}`
+            : `${url}/panel/api/clients/del/${encodeURIComponent(username)}`;
+          try {
+            await universalFetch(delEmailUrl, {
+              method: 'POST',
+              headers: {
+                'Cookie': `session=${apiKey}`,
+                'Authorization': `Bearer ${apiKey}`
+              }
+            });
+          } catch (_) {}
+        }
+
+        // 2. Also attempt deletion by client UUID
         if (clientUuid) {
           const delUrl = url.includes('/panel')
             ? `${url}/api/inbounds/delClient/${encodeURIComponent(clientUuid)}`
             : `${url}/panel/api/inbounds/delClient/${encodeURIComponent(clientUuid)}`;
 
-          await universalFetch(delUrl, {
-            method: 'POST',
-            headers: {
-              'Cookie': `session=${apiKey}`,
-              'Authorization': `Bearer ${apiKey}`
-            }
-          });
+          try {
+            await universalFetch(delUrl, {
+              method: 'POST',
+              headers: {
+                'Cookie': `session=${apiKey}`,
+                'Authorization': `Bearer ${apiKey}`
+              }
+            });
+          } catch (_) {}
         }
       } else if (type === 'hiddify') {
         const uuid = remoteInfo.uuid || remoteInfo.id;
@@ -1421,7 +1459,76 @@ export class PanelManager {
       }
     }
 
-    return { success: true, totalAdded, totalUpdated };
+    // Ensure all users are provisioned across ALL active panels
+    let crossSynced = 0;
+    try {
+      const syncResult = await this.syncUsersToAllPanels(env);
+      crossSynced = syncResult.syncedUsers || 0;
+    } catch (crossErr) {
+      console.warn('Cross-panel user sync error:', crossErr.message);
+    }
+
+    return { success: true, totalAdded, totalUpdated, crossSynced };
+  }
+
+  /**
+   * Provisions all existing users across ALL active panels
+   * so that every user has working subscription links on every panel in priority order.
+   */
+  static async syncUsersToAllPanels(env) {
+    const panels = await this.getPanels(env);
+    const activePanels = panels.filter(p => p.autoSync !== false);
+    const activePanelIds = activePanels.map(p => p.id);
+
+    const kvList = await env.VPN_USERS.list();
+    let syncedCount = 0;
+
+    for (const key of kvList.keys) {
+      if (!/^\d+$/.test(key.name)) continue;
+      const raw = await env.VPN_USERS.get(key.name);
+      if (!raw) continue;
+
+      let user;
+      try {
+        user = JSON.parse(raw);
+      } catch (_) {
+        continue;
+      }
+
+      user.remote_panel_mappings = user.remote_panel_mappings || {};
+      let needsUpdate = false;
+
+      // Fix any old dead IPs (13.140.94.235, 13.140.84.27) or wrong port 2096
+      if (Array.isArray(user.upstream_sub_urls)) {
+        user.upstream_sub_urls = user.upstream_sub_urls.map(u => {
+          if (u.includes('13.140.94.235') || u.includes('13.140.84.27') || u.includes(':2096')) {
+            needsUpdate = true;
+            return u.replace(/13\.140\.(94\.235|84\.27)/g, '95.182.87.115').replace(':2096', ':2016');
+          }
+          return u;
+        });
+      }
+
+      // Check if user is missing mapping for any active panel
+      for (const panel of activePanels) {
+        if (!user.remote_panel_mappings[panel.id] || !user.remote_panel_mappings[panel.id].subUrl) {
+          needsUpdate = true;
+          break;
+        }
+      }
+
+      if (needsUpdate || !user.panel_ids || user.panel_ids.length < activePanelIds.length) {
+        try {
+          user = await this.assignPanelsToUser(env, user, activePanelIds, user.upstream_sub_urls || []);
+          await env.VPN_USERS.put(key.name, JSON.stringify(user));
+          syncedCount++;
+        } catch (e) {
+          console.error(`Failed to sync user ${key.name} to all panels:`, e.message);
+        }
+      }
+    }
+
+    return { success: true, syncedUsers: syncedCount };
   }
 
   /**
