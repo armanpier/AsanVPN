@@ -9,4 +9,5 @@
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#B0BEC5</color>
     <color name="button_keypad">#282E3A</color>
+    <color name="ic_launcher_background">#F6F7F9</color>
 </resources>

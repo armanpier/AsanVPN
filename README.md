@@ -17,11 +17,11 @@ The Android app is pre-configured to connect directly to the active Cloudflare W
 
 | Architecture | APK Download | File Size | Recommended For |
 | :--- | :--- | :--- | :--- |
-| **arm64-v8a (Recommended)** | [⬇️ **Download arm64-v8a**](https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-arm64-v8a.apk) | **~28.4 MB** | **All modern Android phones (Samsung, Xiaomi, Pixel, Huawei, etc.) - 2x faster download** |
-| **Universal (All CPUs)** | [⬇️ **Download Universal**](https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-universal.apk) | **~66.2 MB** | **Guaranteed to work on ANY Android device without checking CPU type** |
-| **armeabi-v7a** | [⬇️ **Download armeabi-v7a**](https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-armeabi-v7a.apk) | **~28.9 MB** | Older 32-bit Android phones, budget tablets, Android TV boxes & sticks |
-| **x86_64** | [⬇️ **Download x86_64**](https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-x86_64.apk) | **~29.4 MB** | 64-bit Android emulators (LDPlayer, BlueStacks, Nox, Android Studio) & Chromebooks |
-| **x86** | [⬇️ **Download x86**](https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-x86.apk) | **~29.9 MB** | Legacy 32-bit Intel x86 emulators |
+| **Universal (All CPUs) - Primary** | [⬇️ **Download Universal APK**](https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk) | **~69.8 MB** | **Guaranteed to work on ANY Android device without checking CPU type** |
+| **arm64-v8a** | [⬇️ **Download arm64-v8a**](https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-arm64-v8a.apk) | **~30.1 MB** | All modern Android phones (Samsung, Xiaomi, Pixel, Huawei, etc.) |
+| **armeabi-v7a** | [⬇️ **Download armeabi-v7a**](https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-armeabi-v7a.apk) | **~30.6 MB** | Older 32-bit Android phones, budget tablets, Android TV boxes & sticks |
+| **x86_64** | [⬇️ **Download x86_64**](https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-x86_64.apk) | **~31.1 MB** | 64-bit Android emulators (LDPlayer, BlueStacks, Nox, Android Studio) & Chromebooks |
+| **x86** | [⬇️ **Download x86**](https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-x86.apk) | **~31.6 MB** | Legacy 32-bit Intel x86 emulators |
 
 > 🌐 **Live Web Admin Dashboard**: [`https://asanvpn-worker.hi-deploy.workers.dev/admin`](https://asanvpn-worker.hi-deploy.workers.dev/admin)
 
