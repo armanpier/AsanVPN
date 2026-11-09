@@ -75,15 +75,24 @@ fun ConnectScreen(
 
     // Live connection timer
     var connectedSeconds by remember { mutableLongStateOf(0L) }
+    var connectingSeconds by remember { mutableLongStateOf(0L) }
     LaunchedEffect(connectionState) {
         if (connectionState == ConnectionState.CONNECTED) {
             connectedSeconds = 0L
+            connectingSeconds = 0L
             while (true) {
                 delay(1000)
                 connectedSeconds++
             }
+        } else if (connectionState == ConnectionState.CONNECTING) {
+            connectingSeconds = 0L
+            while (true) {
+                delay(1000)
+                connectingSeconds++
+            }
         } else {
             connectedSeconds = 0L
+            connectingSeconds = 0L
         }
     }
 
@@ -122,13 +131,13 @@ fun ConnectScreen(
 
     val statusBadgeText = when (connectionState) {
         ConnectionState.DISCONNECTED -> "خاموش"
-        ConnectionState.CONNECTING -> "در حال برقراری ارتباط..."
+        ConnectionState.CONNECTING -> if (connectingSeconds >= 6) "درحال بررسی لینک‌ها..." else "در حال برقراری ارتباط..."
         ConnectionState.CONNECTED -> "متصل و محافظت‌شده"
     }
 
     val statusSubText = when (connectionState) {
         ConnectionState.DISCONNECTED -> "برای روشن شدن وی‌پی‌ان لمس کنید"
-        ConnectionState.CONNECTING -> "در حال پیدا کردن سریع‌ترین مسیر..."
+        ConnectionState.CONNECTING -> if (connectingSeconds >= 6) "درحال بررسی لینک‌ها..." else "در حال پیدا کردن سریع‌ترین مسیر..."
         ConnectionState.CONNECTED -> "ترافیک اینترنت شما کاملاً رمزگذاری شده است"
     }
 

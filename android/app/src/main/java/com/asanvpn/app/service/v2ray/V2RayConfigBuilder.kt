@@ -233,7 +233,7 @@ object V2RayConfigBuilder {
 
         val settings = JsonObject()
         val streamSettings = JsonObject()
-        val sec = node.security?.lowercase() ?: "none"
+        val sec = if (!node.pbk.isNullOrBlank()) "reality" else (node.security?.lowercase() ?: "none")
         streamSettings.addProperty("network", if (node.type.isNullOrEmpty()) "tcp" else node.type.lowercase())
         streamSettings.addProperty("security", sec)
 
@@ -310,7 +310,14 @@ object V2RayConfigBuilder {
             streamSettings.add("tlsSettings", tls)
         } else if (sec == "reality") {
             val reality = JsonObject()
-            reality.addProperty("serverName", if (!node.sni.isNullOrBlank()) node.sni else node.server)
+            val serverName = if (!node.sni.isNullOrBlank() && !node.sni.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"""))) {
+                node.sni
+            } else if (!node.server.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"""))) {
+                node.server
+            } else {
+                "speedtest.net"
+            }
+            reality.addProperty("serverName", serverName)
             reality.addProperty("fingerprint", if (!node.fingerprint.isNullOrBlank()) node.fingerprint else "chrome")
             reality.addProperty("publicKey", node.pbk ?: "")
             reality.addProperty("shortId", node.sid ?: "")

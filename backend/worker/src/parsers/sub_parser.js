@@ -34,6 +34,18 @@ function parseVless(uri) {
     const params = Object.fromEntries(url.searchParams.entries());
     const remark = decodeURIComponent(url.hash ? url.hash.substring(1) : `${host}:${port}`);
 
+    // If pbk is present or security is reality, ensure security is 'reality'
+    const isReality = Boolean(params.pbk || params.security === 'reality');
+    const security = isReality ? 'reality' : (params.security || 'none');
+
+    // If Reality and sni is empty or is an IP address, provide standard fallback sni
+    let sni = params.sni || '';
+    if (isReality && (!sni || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(sni))) {
+      sni = 'speedtest.net';
+    } else if (!sni) {
+      sni = host;
+    }
+
     return {
       protocol: 'vless',
       remark: remark || 'Server',
@@ -41,11 +53,11 @@ function parseVless(uri) {
       port: port,
       uuid: uuid,
       type: params.type || 'tcp',
-      security: params.security || 'none',
-      sni: params.sni || host,
+      security: security,
+      sni: sni,
       alpn: params.alpn ? params.alpn.split(',') : undefined,
       path: params.path || '',
-      hostHeader: params.host || params.sni || host,
+      hostHeader: params.host || sni || host,
       flow: params.flow || '',
       pbk: params.pbk || '', // Reality public key
       sid: params.sid || '', // Reality short id

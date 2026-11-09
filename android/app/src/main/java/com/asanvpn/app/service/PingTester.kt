@@ -68,15 +68,19 @@ object PingTester {
         var bestNode: VpnNode? = null
 
         // WATERFALL CASCADE LOOP:
-        // Always test Priority 1 first. Only cascade to Priority 2/3 if Priority 1 completely fails.
+        // Always test Priority 1 first with increased patience/timeout. Only cascade to Priority 2/3 if Priority 1 completely fails.
         for ((tier, tierNodes) in priorityTiers) {
             val tierName = tierNodes.firstOrNull()?.panelName ?: "پنل اولویت $tier"
-            Log.i(TAG, "==> [Priority Cascade] Testing Priority Tier $tier ($tierName) with ${tierNodes.size} candidate nodes...")
+            val isTopPriority = (tier == priorityTiers.firstKey())
+            val tcpTimeout = if (isTopPriority) 2500 else 1200
+            val realDelayTimeout = if (isTopPriority) 7000L else 3500L
 
-            // Rapid parallel TCP prescan (500ms timeout) for this tier to filter completely dead endpoints
+            Log.i(TAG, "==> [Priority Cascade] Testing Priority Tier $tier ($tierName) with ${tierNodes.size} candidate nodes (timeout: ${realDelayTimeout}ms)...")
+
+            // Parallel TCP prescan for this tier to identify responsive endpoints
             val tcpResults = tierNodes.map { node ->
                 async {
-                    val tcp = testTcpLatency(node.server, node.port, 500)
+                    val tcp = testTcpLatency(node.server, node.port, tcpTimeout)
                     Pair(node, tcp)
                 }
             }.awaitAll()
@@ -84,11 +88,11 @@ object PingTester {
             val responsive = tcpResults.filter { it.second > 0 }.sortedBy { it.second }.map { it.first }
             val tierCandidatesToTest = if (responsive.isNotEmpty()) responsive.take(10) else tierNodes.take(10)
 
-            // Test Real Delay via Libv2ray HTTP 204 on this tier's candidates
+            // Test Real Delay via Libv2ray HTTP 204 on this tier's candidates with generous patience for top tier
             coroutineScope {
                 tierCandidatesToTest.forEach { node ->
                     launch {
-                        val realDelay = measureRealDelay(node, 2200L)
+                        val realDelay = measureRealDelay(node, realDelayTimeout)
                         node.latencyMs = realDelay
                         if (realDelay in 1 until bestLatency.get()) {
                             Log.i(TAG, "Tier $tier Verified OK: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms")
@@ -153,11 +157,15 @@ object PingTester {
         // Waterfall cascade: test each priority tier in order
         for ((tier, tierNodes) in priorityTiers) {
             val tierName = tierNodes.firstOrNull()?.panelName ?: "اولویت $tier"
-            Log.i(TAG, "findFastestNode: Checking Priority Tier $tier ($tierName, ${tierNodes.size} nodes)")
+            val isTopPriority = (tier == priorityTiers.firstKey())
+            val tcpTimeout = if (isTopPriority) 2500 else 1200
+            val realDelayTimeout = if (isTopPriority) 7000L else 3500L
+
+            Log.i(TAG, "findFastestNode: Checking Priority Tier $tier ($tierName, ${tierNodes.size} nodes, timeout: ${realDelayTimeout}ms)")
 
             val tcpResults = tierNodes.map { node ->
                 async {
-                    val tcp = testTcpLatency(node.server, node.port, 500)
+                    val tcp = testTcpLatency(node.server, node.port, tcpTimeout)
                     Pair(node, tcp)
                 }
             }.awaitAll()
@@ -168,7 +176,7 @@ object PingTester {
             val realResults = poolToTest.map { node ->
                 async {
                     semaphore.withPermit {
-                        val realDelay = measureRealDelay(node, 2000L)
+                        val realDelay = measureRealDelay(node, realDelayTimeout)
                         node.latencyMs = realDelay
                         Pair(node, realDelay)
                     }
@@ -198,21 +206,32 @@ object PingTester {
 
     /**
      * Measures true end-to-end HTTP round-trip latency through the proxy tunnel using Libv2ray.
+     * Tries primary Cloudflare endpoint first, and automatically falls back to Google generate_204
+     * if primary times out or is blocked.
      * Returns true latency in milliseconds if working, or -1L if broken/blocked.
      */
-    suspend fun measureRealDelay(node: VpnNode, timeoutMs: Long = 2500L): Long = withContext(Dispatchers.IO) {
+    suspend fun measureRealDelay(node: VpnNode, timeoutMs: Long = 3500L): Long = withContext(Dispatchers.IO) {
         val configJson = try {
             V2RayConfigBuilder.buildTestConfig(node)
         } catch (e: Exception) {
             return@withContext -1L
         }
 
-        try {
-            val delay = Libv2ray.measureOutboundDelay(configJson, TEST_URL_PRIMARY)
-            if (delay > 0) delay else -1L
-        } catch (e: Exception) {
+        withTimeoutOrNull(timeoutMs) {
+            // First attempt with primary test endpoint (Cloudflare)
+            try {
+                val delay1 = Libv2ray.measureOutboundDelay(configJson, TEST_URL_PRIMARY)
+                if (delay1 > 0) return@withTimeoutOrNull delay1
+            } catch (_: Exception) {}
+
+            // Second attempt with fallback test endpoint (Google / gstatic)
+            try {
+                val delay2 = Libv2ray.measureOutboundDelay(configJson, TEST_URL_FALLBACK)
+                if (delay2 > 0) return@withTimeoutOrNull delay2
+            } catch (_: Exception) {}
+
             -1L
-        }
+        } ?: -1L
     }
 
     /**
@@ -248,6 +267,11 @@ object PingTester {
     }
 
     private fun isUsableEgressNode(node: VpnNode): Boolean {
+        // If node has Reality public key (pbk), it is an encrypted Reality tunnel, NOT plaintext!
+        if (!node.pbk.isNullOrBlank()) {
+            return true
+        }
+
         // Plaintext nodes (security=none) cannot bypass DPI filtering
         val sec = node.security?.lowercase()?.trim() ?: "none"
         if (sec == "none" || sec.isEmpty()) {
@@ -259,10 +283,6 @@ object PingTester {
         }
         val s = node.server.lowercase().trim()
         if (s.startsWith("104.") || s.startsWith("172.67.") || s.startsWith("162.159.")) {
-            return false
-        }
-        // Exclude Iranian domestic bridges/relays that don't egress directly to foreign web
-        if (s.endsWith(".ir") || s.contains(".ir:")) {
             return false
         }
         return true
