@@ -28,7 +28,8 @@ data class UserInfo(
     @SerializedName("max_devices") val maxDevices: Int? = null,
     @SerializedName("active_devices_count") val activeDevicesCount: Int? = null,
     @SerializedName("support_phone") val supportPhone: String?,
-    @SerializedName("support_telegram") val supportTelegram: String?
+    @SerializedName("support_telegram") val supportTelegram: String?,
+    @SerializedName("is_admin") val isAdmin: Boolean? = false
 )
 
 data class VpnNode(

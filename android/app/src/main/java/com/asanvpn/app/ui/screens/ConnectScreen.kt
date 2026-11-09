@@ -35,9 +35,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.asanvpn.app.data.PreferencesManager
 import com.asanvpn.app.data.VpnRepository
 import com.asanvpn.app.data.models.ConnectionState
 import com.asanvpn.app.ui.theme.*
+import com.asanvpn.app.util.AppLogger
 import kotlinx.coroutines.delay
 
 @Composable
@@ -59,7 +61,11 @@ fun ConnectScreen(
     onChangePin: () -> Unit
 ) {
     val context = LocalContext.current
+    val prefs = remember { PreferencesManager(context) }
     var showDebugDialog by remember { mutableStateOf(false) }
+    var showAdminAuthDialog by remember { mutableStateOf(false) }
+    var adminPasswordInput by remember { mutableStateOf("") }
+    var isAdminMode by remember { mutableStateOf(prefs.isAdmin) }
 
     fun formatTrafficRemaining(bytes: Long): String {
         if (bytes < 0L) return "نامحدود"
@@ -878,31 +884,84 @@ fun ConnectScreen(
 
     // ---------------- DEBUG LOG DIALOG ----------------
     if (showDebugDialog) {
+        val currentLogText = if (isAdminMode) AppLogger.getAdminLog() else AppLogger.getUserLog()
+
         AlertDialog(
             onDismissRequest = { showDebugDialog = false },
             title = {
-                Text(
-                    text = "گزارش وضعیت اتصال",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isAdminMode) "گزارش فنی و دیباگ (مدیر)" else "گزارش وضعیت اتصال",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    if (isAdminMode) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = GreenConnected.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "دسترسی مدیر",
+                                color = GreenConnected,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
             },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        text = VpnRepository.lastDebugLog,
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                        lineHeight = 16.sp
-                    )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp, max = 340.dp)
+                            .background(NeumorphSunken, RoundedCornerShape(12.dp))
+                            .border(1.dp, NeumorphBorderSubtle, RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = currentLogText,
+                            fontSize = 12.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            color = if (isAdminMode) AccentTeal else TextSecondary,
+                            lineHeight = 17.sp
+                        )
+                    }
+
+                    if (!isAdminMode) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = { showAdminAuthDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = AccentCoral
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("مشاهده گزارش کامل (مخصوص مدیر)", fontSize = 11.sp, color = AccentCoral)
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("AsanVPN Debug Log", VpnRepository.lastDebugLog)
+                        val clip = ClipData.newPlainText("AsanVPN Log", currentLogText)
                         clipboard.setPrimaryClip(clip)
                         Toast.makeText(context, "گزارش در حافظه کپی شد", Toast.LENGTH_SHORT).show()
                     }
@@ -917,6 +976,64 @@ fun ConnectScreen(
             },
             containerColor = NeumorphSurface,
             shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    if (showAdminAuthDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showAdminAuthDialog = false 
+                adminPasswordInput = ""
+            },
+            title = {
+                Text("احراز هویت مدیر", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            },
+            text = {
+                Column {
+                    Text(
+                        "جهت مشاهده آدرس سرورها، کانفیگ‌ها و لاگ فنی، رمز عبور یا کد مدیریت را وارد فرمایید:",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = adminPasswordInput,
+                        onValueChange = { adminPasswordInput = it },
+                        singleLine = true,
+                        placeholder = { Text("رمز عبور یا کد مدیریت", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val input = adminPasswordInput.trim()
+                        if (input == "Arman4237340" || input == "22858950" || input == prefs.savedPin) {
+                            isAdminMode = true
+                            prefs.isAdmin = true
+                            showAdminAuthDialog = false
+                            adminPasswordInput = ""
+                            Toast.makeText(context, "دسترسی مدیریت تایید شد", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "رمز عبور مدیریت نادرست است", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("تایید", color = AccentTeal, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showAdminAuthDialog = false 
+                    adminPasswordInput = ""
+                }) {
+                    Text("انصراف", color = TextSecondary)
+                }
+            },
+            containerColor = NeumorphSurface,
+            shape = RoundedCornerShape(18.dp)
         )
     }
 }

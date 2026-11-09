@@ -8,7 +8,7 @@ export function getAdminDashboardHtml() {
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>پنل مدیریت آسان وی‌پی‌ان | AsanVPN Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -18,15 +18,21 @@ export function getAdminDashboardHtml() {
     *, *::before, *::after {
       box-sizing: border-box;
     }
-    html, body {
+    html {
       overflow-x: hidden;
       width: 100%;
-      max-width: 100vw;
+      height: 100%;
+    }
+    body {
+      overflow-x: hidden !important;
+      width: 100% !important;
+      max-width: 100% !important;
       margin: 0;
       padding: 0;
       font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: #0B1120;
       color: #F8FAFC;
+      position: relative;
     }
     .glass-card {
       background: rgba(30, 41, 59, 0.7);
@@ -42,57 +48,83 @@ export function getAdminDashboardHtml() {
 
     /* Professional Responsive Modal Architecture */
     .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 50;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.75rem;
-      background: rgba(2, 6, 23, 0.88);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      overflow-y: auto;
-      overflow-x: hidden;
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      height: 100dvh !important;
+      z-index: 1000 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 0.75rem !important;
+      background: rgba(2, 6, 23, 0.88) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      box-sizing: border-box !important;
     }
     .modal-backdrop.hidden {
       display: none !important;
     }
     .modal-card {
-      width: 100%;
-      max-width: 36rem;
-      margin: auto;
-      max-height: 90vh;
-      max-height: 90dvh;
-      display: flex;
-      flex-direction: column;
-      border-radius: 1.25rem;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      background: rgba(15, 23, 42, 0.96);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
-      overflow: hidden;
+      width: 100% !important;
+      max-width: 38rem !important;
+      margin: auto !important;
+      max-height: 90vh !important;
+      max-height: 90dvh !important;
+      display: flex !important;
+      flex-direction: column !important;
+      border-radius: 1.25rem !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      background: rgba(15, 23, 42, 0.98) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85) !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
     }
     @media (max-width: 640px) {
       .modal-backdrop {
-        padding: 0.5rem;
-        align-items: center;
-        overflow-x: hidden;
+        padding: 0.5rem !important;
+        align-items: center !important;
+        overflow-x: hidden !important;
       }
       .modal-card {
         width: 100% !important;
-        max-width: calc(100vw - 1rem) !important;
+        max-width: 100% !important;
         max-height: 94dvh !important;
-        border-radius: 1.25rem;
+        border-radius: 1rem !important;
         margin: auto !important;
         box-sizing: border-box !important;
       }
+      .modal-header {
+        padding: 0.85rem 1rem !important;
+      }
       .modal-body {
-        padding: 1rem 0.875rem !important;
+        padding: 0.85rem 1rem !important;
+        overflow-x: hidden !important;
+      }
+      .modal-footer {
+        padding: 0.75rem 1rem !important;
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+      }
+      .modal-footer > * {
+        width: 100% !important;
+        display: flex !important;
+        gap: 0.5rem !important;
+      }
+      .modal-footer button {
+        flex: 1 1 auto !important;
+        justify-content: center !important;
+        padding-top: 0.65rem !important;
+        padding-bottom: 0.65rem !important;
+        text-align: center !important;
       }
       input, select, textarea {
         font-size: 13px !important;
@@ -184,8 +216,8 @@ export function getAdminDashboardHtml() {
   <!-- MAIN APP CONTAINER -->
   <div id="dashboard-app" class="hidden flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden">
     <!-- TOP NAVIGATION -->
-    <header class="glass-card sticky top-0 z-40 border-b border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5">
-      <div class="flex items-center gap-3 sm:gap-6">
+    <header class="glass-card sticky top-0 z-40 border-b border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 w-full max-w-full">
+      <div class="flex items-center justify-between sm:justify-start gap-3 sm:gap-6">
         <div class="flex items-center gap-2 sm:gap-3">
           <div class="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-center justify-center text-emerald-400 text-lg sm:text-xl font-bold shrink-0">
             <i class="fa-solid fa-bolt"></i>
@@ -215,7 +247,7 @@ export function getAdminDashboardHtml() {
       </div>
 
       <!-- ACTION BUTTONS -->
-      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto justify-end">
         <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۳.۰)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-download"></i>
           <span class="hidden md:inline">دانلود APK</span>
@@ -266,7 +298,6 @@ export function getAdminDashboardHtml() {
         <span>پنل‌های پروکسی</span>
         <span id="badge-nav-panels-mob" class="bg-indigo-500/20 text-indigo-300 text-[10px] px-1.5 py-0.2 rounded-full font-mono">0</span>
       </button>
-    </div>
     </div>
 
     <!-- MAIN CONTENT AREA -->
@@ -435,13 +466,13 @@ export function getAdminDashboardHtml() {
 
         <div>
           <label class="block text-xs text-slate-300 mb-1">آدرس پنل یا لینک کانتینر (Base URL)</label>
-          <input type="text" id="panel-form-url" placeholder="https://irtun.darklink.ir:8000 یا https://raw.githubusercontent.com/..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
+          <input type="text" id="panel-form-url" dir="ltr" placeholder="https://irtun.darklink.ir:8000 یا https://raw.githubusercontent.com/..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
           <p id="panel-url-hint" class="text-[11px] text-slate-500 mt-1">آدرس ورود به پنل یا لینک خام کانتینر نودهای Xray</p>
         </div>
 
         <div id="panel-form-api-key-container">
           <label class="block text-xs text-slate-300 mb-1">کلید دسترسی API / سشن کوکی / توکن</label>
-          <input type="password" id="panel-form-api-key" placeholder="API Key یا Session Cookie..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
+          <input type="password" id="panel-form-api-key" dir="ltr" placeholder="API Key یا Session Cookie..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
           <p id="panel-key-hint" class="text-[11px] text-slate-500 mt-1">برای پاسارگاد: X-API-KEY | برای ۳X-UI: کوکی session یا توکن API</p>
         </div>
 
@@ -460,13 +491,13 @@ export function getAdminDashboardHtml() {
       </div>
 
       <div class="modal-footer">
-        <button onclick="testPanelFormConnection()" type="button" class="bg-slate-800 hover:bg-slate-700 text-indigo-400 px-3.5 py-2 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
+        <button onclick="testPanelFormConnection()" type="button" class="bg-slate-800 hover:bg-slate-700 text-indigo-400 px-3.5 py-2.5 rounded-xl text-xs font-medium transition flex items-center justify-center gap-1.5 w-full sm:w-auto">
           <i class="fa-solid fa-bolt"></i>
           <span>تست اتصال زنده</span>
         </button>
-        <div class="flex items-center gap-2">
-          <button onclick="closeModal('panel-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
-          <button onclick="savePanelForm()" type="button" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30 flex items-center gap-1.5">
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <button onclick="closeModal('panel-modal')" type="button" class="flex-1 sm:flex-initial bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl text-xs text-slate-300 text-center">انصراف</button>
+          <button onclick="savePanelForm()" type="button" class="flex-1 sm:flex-initial bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30 flex items-center justify-center gap-1.5 text-center">
             <i class="fa-solid fa-cloud-arrow-up"></i>
             <span>ذخیره پنل</span>
           </button>
@@ -1515,14 +1546,14 @@ export function getAdminDashboardHtml() {
             '</div>' +
 
             '<div class="bg-slate-900/80 rounded-xl p-3 border border-slate-800 text-xs font-mono space-y-1.5 overflow-hidden">' +
-              '<div class="flex items-center justify-between text-slate-400 truncate">' +
-                '<span class="text-slate-500 text-[10px]">' + (isContainer ? 'لینک کانتینر:' : 'آدرس API:') + '</span>' +
-                '<span class="text-slate-300 truncate" dir="ltr">' + p.url + '</span>' +
+              '<div class="flex items-center justify-between text-slate-400 min-w-0 gap-2">' +
+                '<span class="text-slate-500 text-[10px] shrink-0">' + (isContainer ? 'لینک کانتینر:' : 'آدرس API:') + '</span>' +
+                '<span class="text-slate-300 truncate min-w-0 text-left font-mono" dir="ltr">' + p.url + '</span>' +
               '</div>' +
               (p.subBaseUrl ? (
-                '<div class="flex items-center justify-between text-slate-400 truncate">' +
-                  '<span class="text-slate-500 text-[10px]">قالب ساب:</span>' +
-                  '<span class="text-slate-300 truncate" dir="ltr">' + p.subBaseUrl + '</span>' +
+                '<div class="flex items-center justify-between text-slate-400 min-w-0 gap-2">' +
+                  '<span class="text-slate-500 text-[10px] shrink-0">قالب ساب:</span>' +
+                  '<span class="text-slate-300 truncate min-w-0 text-left font-mono" dir="ltr">' + p.subBaseUrl + '</span>' +
                 '</div>'
               ) : '') +
             '</div>' +

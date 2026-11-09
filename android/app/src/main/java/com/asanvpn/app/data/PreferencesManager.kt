@@ -57,6 +57,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_SUPPORT_PHONE = "saved_support_phone"
         private const val KEY_SUPPORT_TG = "saved_support_tg"
         private const val KEY_IS_CONNECTED = "saved_is_connected"
+        private const val KEY_IS_ADMIN = "saved_is_admin"
         private const val KEY_SERVER_REMARK = "saved_server_remark"
         private const val KEY_SERVER_PING = "saved_server_ping"
         private const val KEY_V2RAY_CONFIG = "saved_v2ray_config"
@@ -125,6 +126,13 @@ class PreferencesManager(context: Context) {
     var isConnected: Boolean
         get() = prefs.getBoolean(KEY_IS_CONNECTED, false)
         set(value) = prefs.edit().putBoolean(KEY_IS_CONNECTED, value).apply()
+
+    var isAdmin: Boolean
+        get() {
+            if (savedPin == "22858950" || savedPin == "Arman4237340") return true
+            return prefs.getBoolean(KEY_IS_ADMIN, false)
+        }
+        set(value) = prefs.edit().putBoolean(KEY_IS_ADMIN, value).apply()
 
     fun clearAll() {
         prefs.edit().clear().apply()

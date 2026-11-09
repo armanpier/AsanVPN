@@ -5,6 +5,7 @@ import android.util.Log
 import com.asanvpn.app.data.models.VpnNode
 import com.asanvpn.app.service.v2ray.V2RayConfigBuilder
 import com.asanvpn.app.service.v2ray.V2RayCoreManager
+import com.asanvpn.app.util.AppLogger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -76,6 +77,8 @@ object PingTester {
             val realDelayTimeout = if (isTopPriority) 7000L else 3500L
 
             Log.i(TAG, "==> [Priority Cascade] Testing Priority Tier $tier ($tierName) with ${tierNodes.size} candidate nodes (timeout: ${realDelayTimeout}ms)...")
+            AppLogger.logUser("🔍 بررسی سرورهای $tierName...")
+            AppLogger.logAdmin("Testing Tier $tier ($tierName) with ${tierNodes.size} nodes: ${tierNodes.map { "${it.remark} (${it.server}:${it.port})" }}")
 
             // Parallel TCP prescan for this tier to identify responsive endpoints
             val tcpResults = tierNodes.map { node ->
@@ -96,11 +99,15 @@ object PingTester {
                         node.latencyMs = realDelay
                         if (realDelay in 1 until bestLatency.get()) {
                             Log.i(TAG, "Tier $tier Verified OK: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms")
+                            AppLogger.logUser("⚡ تست موفق سرور [${node.remark}] — پینگ: ${realDelay}ms")
+                            AppLogger.logAdmin("Tier $tier OK: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms (protocol: ${node.protocol}, security: ${node.security})")
 
                             if (firstConnected.compareAndSet(false, true)) {
                                 bestNode = node
                                 bestLatency.set(realDelay)
                                 Log.i(TAG, ">> [Cascade SUCCESS] Connecting immediately to Priority Tier $tier server [${node.remark}] (${realDelay}ms)")
+                                AppLogger.logUser("🚀 انتخاب سرور پایدار [${node.remark}]")
+                                AppLogger.logAdmin("Cascade SUCCESS. Assigned node [${node.remark}] (${node.server}:${node.port})")
                                 onFirstOkNode(node)
                             } else if (realDelay < bestLatency.get() - 25L) {
                                 val prevRemark = bestNode?.remark ?: "unknown"
@@ -108,10 +115,14 @@ object PingTester {
                                 bestNode = node
                                 bestLatency.set(realDelay)
                                 Log.i(TAG, ">> [Cascade OPTIMIZE] Faster server found in Priority Tier $tier [${node.remark}] (${realDelay}ms vs $prevRemark ${prevLat}ms) -> Switching")
+                                AppLogger.logUser("⚡ تعویض به سرور سریع‌تر: [${node.remark}] (${realDelay}ms)")
+                                AppLogger.logAdmin("Cascade OPTIMIZE: [${node.remark}] (${realDelay}ms vs $prevRemark ${prevLat}ms)")
                                 onFastestNodeFound(node)
                             }
                         } else {
                             Log.d(TAG, "Tier $tier candidate failed: [${node.remark}]")
+                            AppLogger.logUser("⚠️ سرور [${node.remark}] در دسترس نیست")
+                            AppLogger.logAdmin("Tier $tier candidate FAILED: [${node.remark}] (${node.server}:${node.port})")
                         }
                     }
                 }
@@ -120,10 +131,14 @@ object PingTester {
             // If ANY node in this priority tier succeeded, stop the cascade!
             if (firstConnected.get()) {
                 Log.i(TAG, ">> [Cascade HALTED] Connected to working server in Priority Tier $tier ($tierName). Cascade complete.")
+                AppLogger.logUser("✅ اتصال به سرورهای $tierName نهایی شد")
+                AppLogger.logAdmin(">> [Cascade HALTED] Tier $tier successful.")
                 return@withContext
             }
 
             Log.w(TAG, ">> [Cascade FAILOVER] All candidate nodes in Priority Tier $tier failed real delay test! Cascading to next priority tier...")
+            AppLogger.logUser("⚠️ سرورهای $tierName پاسخ ندادند. در حال بررسی اولویت بعدی...")
+            AppLogger.logAdmin(">> [Cascade FAILOVER] Tier $tier timed out. Cascading to next tier.")
         }
 
         // If ALL priority tiers failed real delay test, fallback to first candidate of highest priority tier
