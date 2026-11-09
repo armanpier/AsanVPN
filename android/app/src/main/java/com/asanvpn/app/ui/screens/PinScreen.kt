@@ -65,7 +65,8 @@ fun PinScreen(
     newVersionAvailable: String? = null,
     onCheckUpdate: () -> Unit = {},
     onPinComplete: (String) -> Unit,
-    onLockoutExpired: () -> Unit = {}
+    onLockoutExpired: () -> Unit = {},
+    onCheckLockout: (String, () -> Unit) -> Unit = { _, done -> done() }
 ) {
     var enteredPin by remember { mutableStateOf("") }
     var screenGlowColor by remember { mutableStateOf(Color.Transparent) }
@@ -81,11 +82,18 @@ fun PinScreen(
     // Live lockout ticker
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lockoutUntil) {
+        var tickCounter = 0
         while (true) {
             currentTime = System.currentTimeMillis()
             if (lockoutUntil > 0L && currentTime >= lockoutUntil) {
                 onLockoutExpired()
                 break
+            }
+            if (lockoutUntil > currentTime) {
+                tickCounter++
+                if (tickCounter % 15 == 0) {
+                    onCheckLockout(enteredPin.ifEmpty { prefs.savedPin ?: "" }) {}
+                }
             }
             delay(1000)
         }
@@ -555,6 +563,39 @@ fun PinScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            var isCheckingUnlock by remember { mutableStateOf(false) }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isCheckingUnlock) Color.LightGray.copy(alpha = 0.3f) else AccentTeal.copy(alpha = 0.12f))
+                                    .border(1.dp, AccentTeal.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                    .clickable(enabled = !isCheckingUnlock) {
+                                        isCheckingUnlock = true
+                                        onCheckLockout(enteredPin.ifEmpty { prefs.savedPin ?: "" }) {
+                                            isCheckingUnlock = false
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LockOpen,
+                                        contentDescription = "استعلام رفع مسدودی",
+                                        tint = AccentTeal,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = if (isCheckingUnlock) "در حال استعلام از سرور..." else "🔓 استعلام رفع مسدودی از سرور",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentTeal
+                                    )
+                                }
+                            }
                         }
                     }
                 } else if (isLoading) {

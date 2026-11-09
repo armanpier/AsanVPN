@@ -185,9 +185,9 @@ export default {
     // App Version & In-App Update API Endpoint
     if ((path === '/api/v1/app/version' || path === '/api/v1/version' || path === '/version') && (request.method === 'GET' || request.method === 'HEAD')) {
       const rawMeta = await env.VPN_USERS.get('apk_meta');
-      let version = "1.3.2";
-      let versionCode = 8;
-      let changelog = "طراحی جدید و مدرن سفید سه‌بعدی، آیکون رسمی جدید، اتصال خودکار با دیپ‌لینک و سیستم به‌روزرسانی خودکار داخلی";
+      let version = "1.3.4";
+      let versionCode = 10;
+      let changelog = "رفع مشکل قفل موقت ۳۰ دقیقه‌ای، بازگشایی آنی مسدودی توسط پنل Asan Dashboard، و ارتقای ثبات اتصال";
       let totalSize = 69791489;
       if (rawMeta) {
         try {
@@ -272,6 +272,57 @@ export default {
 
     try {
       // -------------------------------------------------------------
+      // 0. CLIENT LOCKOUT CHECK ENDPOINT: POST /api/v1/check_lockout
+      // -------------------------------------------------------------
+      if (path === '/api/v1/check_lockout' && request.method === 'POST') {
+        const body = await request.json().catch(() => ({}));
+        const pin = String(body.pin || '').trim();
+        const deviceId = String(body.device_id || body.deviceId || '').trim();
+        const now = Math.floor(Date.now() / 1000);
+
+        let adminUnlocked = false;
+        if (pin) {
+          const rawUser = await env.VPN_USERS.get(pin);
+          if (rawUser) {
+            try {
+              const u = JSON.parse(rawUser);
+              if (u.lockout_cleared === true || (u.lockout_cleared_at && u.lockout_cleared_at > (now - 86400))) {
+                adminUnlocked = true;
+                if (deviceId) {
+                  await safeKvDelete(env, `rl:${deviceId}`);
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        const rlKey = deviceId ? `rl:${deviceId}` : null;
+        let isLocked = false;
+        let remainingSec = 0;
+
+        if (rlKey && !adminUnlocked) {
+          const rawRl = await env.VPN_USERS.get(rlKey);
+          if (rawRl) {
+            try {
+              const rlData = JSON.parse(rawRl);
+              if (rlData.locked_until && rlData.locked_until > now) {
+                isLocked = true;
+                remainingSec = rlData.locked_until - now;
+              }
+            } catch (_) {}
+          }
+        }
+
+        return new Response(JSON.stringify({
+          status: 'success',
+          locked: isLocked && !adminUnlocked,
+          remaining_seconds: isLocked && !adminUnlocked ? remainingSec : 0,
+          admin_unlocked: adminUnlocked,
+          message_fa: adminUnlocked ? 'قفل ورود توسط مدیر بازگشایی شد.' : (isLocked ? 'حساب هنوز مسدود است.' : 'حساب فعال است.')
+        }), { status: 200, headers: corsHeaders });
+      }
+
+      // -------------------------------------------------------------
       // 1. CLIENT CONNECTION ENDPOINT: POST /api/v1/connect
       // -------------------------------------------------------------
       if (path === '/api/v1/connect' && request.method === 'POST') {
@@ -299,12 +350,28 @@ export default {
 
         const now = Math.floor(Date.now() / 1000);
 
+        // Check if admin cleared lockout for this user
+        let userWasAdminUnlocked = false;
+        const rawUserPreview = await env.VPN_USERS.get(pin);
+        if (rawUserPreview) {
+          try {
+            const u = JSON.parse(rawUserPreview);
+            if (u.lockout_cleared === true || (u.lockout_cleared_at && u.lockout_cleared_at > (now - 86400))) {
+              userWasAdminUnlocked = true;
+            }
+          } catch (_) {}
+        }
+
         // --- Rate Limiting: 3 wrong PIN attempts -> 30 minutes lockout ---
         const rlKey = `rl:${deviceId}`;
-        const rawRl = await env.VPN_USERS.get(rlKey);
+        if (userWasAdminUnlocked) {
+          await safeKvDelete(env, rlKey);
+        }
+
+        const rawRl = userWasAdminUnlocked ? null : await env.VPN_USERS.get(rlKey);
         let rlData = rawRl ? JSON.parse(rawRl) : { count: 0, locked_until: 0 };
 
-        if (rlData.locked_until && rlData.locked_until > now) {
+        if (!userWasAdminUnlocked && rlData.locked_until && rlData.locked_until > now) {
           const remainingSec = rlData.locked_until - now;
           const remainingMin = Math.ceil(remainingSec / 60);
           return new Response(JSON.stringify({
@@ -941,12 +1008,56 @@ export default {
         }
 
         const user = JSON.parse(raw);
+        const oldDevices = [user.device_id, ...(Array.isArray(user.devices) ? user.devices : [])].filter(Boolean);
         DeviceLock.resetLock(user);
-        await env.VPN_USERS.put(pin, JSON.stringify(user));
+        user.lockout_cleared_at = Math.floor(Date.now() / 1000);
+        user.lockout_cleared = true;
+        await safeKvPut(env, pin, JSON.stringify(user));
+
+        // Clear rate limits for all associated devices and PIN
+        await safeKvDelete(env, `rl:pin:${pin}`);
+        for (const dev of oldDevices) {
+          await safeKvDelete(env, `rl:${dev}`);
+        }
 
         return new Response(JSON.stringify({
           status: 'success',
-          message: `Device lock for PIN ${pin} has been reset. User can now bind a new phone.`
+          message: `قفل سخت‌افزاری و مسدودی ورود برای پین ${pin} با موفقیت بازنشانی شد.`
+        }), { headers: corsHeaders });
+      }
+
+      // POST /api/v1/admin/unlock_rate_limit
+      if (path === '/api/v1/admin/unlock_rate_limit' && request.method === 'POST') {
+        const body = await request.json().catch(() => ({}));
+        const pin = String(body.pin || '').trim();
+        const deviceId = String(body.device_id || body.deviceId || '').trim();
+        const now = Math.floor(Date.now() / 1000);
+
+        if (deviceId) {
+          await safeKvDelete(env, `rl:${deviceId}`);
+        }
+
+        if (pin) {
+          await safeKvDelete(env, `rl:pin:${pin}`);
+          const raw = await env.VPN_USERS.get(pin);
+          if (raw) {
+            try {
+              const user = JSON.parse(raw);
+              user.lockout_cleared_at = now;
+              user.lockout_cleared = true;
+              await safeKvPut(env, pin, JSON.stringify(user));
+
+              const devs = [user.device_id, ...(Array.isArray(user.devices) ? user.devices : [])].filter(Boolean);
+              for (const d of devs) {
+                await safeKvDelete(env, `rl:${d}`);
+              }
+            } catch (_) {}
+          }
+        }
+
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: `قفل و محدودیت ورود ۳۰ دقیقه‌ای با موفقیت برطرف شد.`
         }), { headers: corsHeaders });
       }
 
@@ -955,7 +1066,7 @@ export default {
         const body = await request.json().catch(() => ({}));
         const deviceId = String(body.device_id || body.deviceId || '').trim();
         if (deviceId) {
-          await env.VPN_USERS.delete(`rl:${deviceId}`);
+          await safeKvDelete(env, `rl:${deviceId}`);
         }
         return new Response(JSON.stringify({
           status: 'success',

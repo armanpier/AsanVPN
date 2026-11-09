@@ -9,6 +9,7 @@ import com.asanvpn.app.data.models.UserInfo
 import com.asanvpn.app.data.models.VpnNode
 import com.asanvpn.app.util.AppLogger
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
@@ -346,5 +347,55 @@ class VpnRepository(private val context: Context) {
                 )
             )
         }
+    }
+
+    data class CheckLockoutResponse(
+        val status: String? = null,
+        val locked: Boolean? = null,
+        @SerializedName("remaining_seconds") val remainingSeconds: Long? = null,
+        @SerializedName("admin_unlocked") val adminUnlocked: Boolean? = null,
+        @SerializedName("message_fa") val messageFa: String? = null
+    )
+
+    suspend fun checkLockout(pin: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        val deviceId = getDeviceId()
+        val jsonPayload = gson.toJson(mapOf("pin" to pin, "device_id" to deviceId))
+        val body = jsonPayload.toRequestBody("application/json".toMediaType())
+
+        for (baseUrl in workerEndpoints) {
+            val url = "$baseUrl/api/v1/check_lockout"
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .post(body)
+                    .header("User-Agent", "AsanVPN-Android/1.0.0")
+                    .build()
+
+                client.newCall(req).execute().use { response ->
+                    val respStr = response.body?.string() ?: ""
+                    if (response.isSuccessful) {
+                        val parsed = try {
+                            gson.fromJson(respStr, CheckLockoutResponse::class.java)
+                        } catch (e: Exception) { null }
+
+                        if (parsed?.adminUnlocked == true || parsed?.locked == false) {
+                            prefs.lockoutUntil = 0L
+                            prefs.failedPinAttempts = 0
+                            AppLogger.logUser("🔓 قفل ۳۰ دقیقه‌ای با موفقیت برطرف شد")
+                            AppLogger.logAdmin("Lockout cleared via check_lockout: $respStr")
+                            return@withContext Result.success(true)
+                        } else {
+                            if (parsed?.locked == true && (parsed.remainingSeconds ?: 0L) > 0L) {
+                                prefs.lockoutUntil = System.currentTimeMillis() + (parsed.remainingSeconds!! * 1000L)
+                            }
+                            return@withContext Result.success(false)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                AppLogger.logAdmin("check_lockout error for $baseUrl: ${e.message}")
+            }
+        }
+        Result.failure(Exception("خطا در ارتباط با سرور"))
     }
 }

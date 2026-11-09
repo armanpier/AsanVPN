@@ -25,13 +25,14 @@ with open(apk_path, 'rb') as f:
         chunks += 1
 
 meta = {
-    'version': '1.3.2',
-    'versionCode': 8,
+    'version': '1.3.4',
+    'versionCode': 10,
     'total_size': size,
     'total_chunks': chunks,
     'chunk_size': chunk_size,
-    'filename': 'AsanVPN-v1.3.2-universal.apk',
-    'sha256': hasher.hexdigest()
+    'filename': 'AsanVPN-v1.3.4-universal.apk',
+    'sha256': hasher.hexdigest(),
+    'changelog': 'رفع مشکل مسدودی ۳۰ دقیقه‌ای ورود، امکان بازگشایی آنی توسط پنل آسان داشبورد، و اتصال پایدار به سرورهای با اولویت بالا'
 }
 
 meta_file = os.path.join(out_dir, 'meta.json')

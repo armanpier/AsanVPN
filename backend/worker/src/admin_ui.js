@@ -248,7 +248,7 @@ export function getAdminDashboardHtml() {
 
       <!-- ACTION BUTTONS -->
       <div class="flex items-center flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto justify-end">
-        <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۳.۲)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl transition flex items-center gap-1">
+        <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۳.۴)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-download"></i>
           <span class="hidden md:inline">دانلود APK</span>
         </a>
@@ -263,6 +263,10 @@ export function getAdminDashboardHtml() {
         <button onclick="triggerMigrateTo8Pin()" id="migrate-8pin-btn" title="تبدیل تمام کدهای قدیمی به ۸ رقمی امن" class="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-shield-halved"></i>
           <span class="hidden lg:inline">تبدیل ۸ رقمی</span>
+        </button>
+        <button onclick="openUnlockLockoutModal()" title="رفع مسدودی و قفل ۳۰ دقیقه‌ای کاربر یا دستگاه" class="bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
+          <i class="fa-solid fa-lock-open"></i>
+          <span class="hidden md:inline">رفع قفل ۳۰ دقیقه</span>
         </button>
         <button onclick="openAddPanelModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl shadow-lg shadow-blue-900/20 transition flex items-center gap-1">
           <i class="fa-solid fa-plus"></i>
@@ -682,6 +686,10 @@ export function getAdminDashboardHtml() {
               <i class="fa-solid fa-arrows-rotate text-[10px]"></i>
               <span>ریست دستگاه‌ها</span>
             </button>
+            <button type="button" onclick="unlockEditUserLockout()" title="رفع قفل و مسدودی ۳۰ دقیقه‌ای ورود" class="px-2.5 py-1.5 text-xs bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg transition flex items-center gap-1">
+              <i class="fa-solid fa-lock-open text-[10px]"></i>
+              <span>رفع قفل ۳۰ دقیقه</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1077,6 +1085,9 @@ export function getAdminDashboardHtml() {
               '<button data-pin="' + u.pin + '" onclick="resetDevice(this.dataset.pin)" title="ریست قفل دستگاه (جهت تغییر گوشی)" class="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition">' +
                 '<i class="fa-solid fa-mobile-screen"></i>' +
               '</button>' +
+              '<button data-pin="' + u.pin + '" onclick="unlockUserLockout(this.dataset.pin)" title="رفع قفل و مسدودی ۳۰ دقیقه‌ای ورود" class="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition">' +
+                '<i class="fa-solid fa-lock-open"></i>' +
+              '</button>' +
               '<button data-pin="' + u.pin + '" onclick="extendUser(this.dataset.pin)" title="تمدید ۳۰ روزه" class="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition">' +
                 '<i class="fa-solid fa-calendar-plus"></i>' +
               '</button>' +
@@ -1138,6 +1149,12 @@ export function getAdminDashboardHtml() {
         const badge = document.getElementById('edit-devices-status-badge');
         if (badge) badge.innerText = '۰ گوشی فعال (قفل‌ها ریست شد)';
       }
+    }
+
+    async function unlockEditUserLockout() {
+      const pin = document.getElementById('edit-pin-val').value;
+      if (!pin) return;
+      await unlockUserLockout(pin);
     }
 
     function openCreateModal() {
@@ -1396,6 +1413,79 @@ export function getAdminDashboardHtml() {
           loadUsers();
         } else {
           Swal.fire({ icon: 'error', title: 'خطا', text: data.error || 'خطا در ریست قفل دستگاه' });
+        }
+      } catch (e) {
+        Swal.fire({ icon: 'error', title: 'خطا', text: e.message });
+      }
+    }
+
+    async function unlockUserLockout(pin) {
+      const confirm = await Swal.fire({
+        title: 'رفع قفل ۳۰ دقیقه‌ای؟',
+        text: 'آیا مسدودی موقت و قفل ۳۰ دقیقه‌ای برای پین ' + pin + ' برطرف شود؟',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'بله، رفع قفل شود',
+        cancelButtonText: 'انصراف'
+      });
+      if (!confirm.isConfirmed) return;
+
+      try {
+        const { ok, data } = await fetchJson('/api/v1/admin/unlock_rate_limit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': currentToken },
+          body: JSON.stringify({ pin })
+        });
+        if (ok) {
+          Swal.fire({ icon: 'success', title: 'انجام شد', text: data.message || 'قفل ۳۰ دقیقه‌ای با موفقیت باز شد.' });
+          loadUsers();
+        } else {
+          Swal.fire({ icon: 'error', title: 'خطا', text: data.error || 'خطا در رفع قفل' });
+        }
+      } catch (e) {
+        Swal.fire({ icon: 'error', title: 'خطا', text: e.message });
+      }
+    }
+
+    async function openUnlockLockoutModal() {
+      const { value: formValues } = await Swal.fire({
+        title: 'رفع مسدودی و قفل ۳۰ دقیقه',
+        html:
+          '<p class="text-xs text-slate-400 mb-3 text-right">اگر کاربر چند بار کد اشتباه زده یا برنامه قفل شده است، با وارد کردن پین یا شناسه دستگاه مسدودی فوراً برداشته می‌شود:</p>' +
+          '<div class="flex flex-col gap-2 text-right">' +
+            '<label class="text-xs text-slate-300">کد ۸ رقمی کاربر (PIN):</label>' +
+            '<input id="swal-unlock-pin" class="swal2-input !m-0 !w-full !text-center text-sm font-mono" placeholder="مثال: 36329986">' +
+            '<label class="text-xs text-slate-300 mt-2">شناسه دستگاه (Device ID اختیاری):</label>' +
+            '<input id="swal-unlock-dev" class="swal2-input !m-0 !w-full !text-center text-xs font-mono" placeholder="اختیاری">' +
+          '</div>',
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '🔓 رفع قفل',
+        cancelButtonText: 'انصراف',
+        preConfirm: () => {
+          const pin = document.getElementById('swal-unlock-pin').value.trim();
+          const deviceId = document.getElementById('swal-unlock-dev').value.trim();
+          if (!pin && !deviceId) {
+            Swal.showValidationMessage('حداقل پین یا شناسه دستگاه را وارد کنید');
+            return false;
+          }
+          return { pin, deviceId };
+        }
+      });
+
+      if (!formValues) return;
+
+      try {
+        const { ok, data } = await fetchJson('/api/v1/admin/unlock_rate_limit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': currentToken },
+          body: JSON.stringify({ pin: formValues.pin, device_id: formValues.deviceId })
+        });
+        if (ok) {
+          Swal.fire({ icon: 'success', title: 'قفل برطرف شد', text: data.message || 'مسدودی موقت با موفقیت باز شد.' });
+          loadUsers();
+        } else {
+          Swal.fire({ icon: 'error', title: 'خطا', text: data.error || 'خطا در رفع قفل' });
         }
       } catch (e) {
         Swal.fire({ icon: 'error', title: 'خطا', text: e.message });

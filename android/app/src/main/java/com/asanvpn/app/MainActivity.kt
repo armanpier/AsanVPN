@@ -187,6 +187,24 @@ class MainActivity : ComponentActivity() {
                                 prefs.failedPinAttempts = 0
                                 prefs.lockoutUntil = 0L
                                 pinError = null
+                            },
+                            onCheckLockout = { pinToCheck, onDone ->
+                                lifecycleScope.launch {
+                                    val res = repository.checkLockout(pinToCheck.ifBlank { prefs.savedPin ?: "" })
+                                    onDone()
+                                    res.onSuccess { unlocked ->
+                                        if (unlocked) {
+                                            prefs.lockoutUntil = 0L
+                                            prefs.failedPinAttempts = 0
+                                            pinError = null
+                                            Toast.makeText(this@MainActivity, "مسدودی با موفقیت برطرف شد. اکنون می‌توانید کد را وارد کنید.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "حساب یا دستگاه هنوز در وضعیت مسدود است. لطفاً به مدیر اطلاع دهید.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }.onFailure {
+                                        Toast.makeText(this@MainActivity, "خطا در اتصال به سرور جهت استعلام", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                         )
                     }
@@ -360,7 +378,8 @@ class MainActivity : ComponentActivity() {
                     isExpired = true
                     return@launch
                 }
-                if (msg.contains("نامعتبر") || msg.contains("فرصت") || msg.contains("invalid") || msg.contains("صحیح نمی‌باشد")) {
+                // Only count as failed PIN attempt if backend explicitly returned status "invalid_pin"
+                if (error is com.asanvpn.app.data.AuthRevokedException && error.status == "invalid_pin") {
                     prefs.failedPinAttempts += 1
                     if (prefs.failedPinAttempts >= 3 && prefs.lockoutUntil <= System.currentTimeMillis()) {
                         prefs.lockoutUntil = System.currentTimeMillis() + (30 * 60 * 1000L)
@@ -690,6 +709,9 @@ class MainActivity : ComponentActivity() {
 
         // 3. If valid 8-digit PIN received from link:
         if (!deepLinkPin.isNullOrBlank() && deepLinkPin.length == 8) {
+            prefs.lockoutUntil = 0L
+            prefs.failedPinAttempts = 0
+            pinError = null
             try {
                 // Copy to system clipboard
                 val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
