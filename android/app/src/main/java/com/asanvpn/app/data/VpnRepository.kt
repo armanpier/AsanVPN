@@ -160,12 +160,28 @@ class VpnRepository(private val context: Context) {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    // Real working endpoints: primary worker + custom domain routes
-    private val workerEndpoints = listOf(
-        "https://asanvpn-worker.hi-deploy.workers.dev",
-        "https://spareone.icu",
-        "https://onthepoint.live"
-    )
+    private fun sec(encoded: String): String {
+        return try {
+            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val decoded = ByteArray(bytes.size)
+            val k = 0x5A
+            for (i in bytes.indices) {
+                decoded[i] = (bytes[i].toInt() xor k).toByte()
+            }
+            String(decoded, Charsets.UTF_8)
+        } catch (e: Exception) {
+            encoded
+        }
+    }
+
+    // Obfuscated endpoints to prevent static string extraction
+    private val workerEndpoints by lazy {
+        listOf(
+            sec("Mi4uKilgdXU7KTs0LCo0dy01KDE/KHQyM3c+Pyo2NSN0LTUoMT8oKXQ+Pyw="),
+            sec("Mi4uKilgdXUpKjsoPzU0P3QzOS8="),
+            sec("Mi4uKilgdXU1NC4yPyo1MzQudDYzLD8=")
+        )
+    }
 
     @SuppressLint("HardwareIds")
     fun getDeviceId(): String {

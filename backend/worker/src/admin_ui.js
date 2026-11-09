@@ -447,7 +447,7 @@ export function getAdminDashboardHtml() {
 
         <div id="panel-form-sub-base-container">
           <label class="block text-xs text-slate-300 mb-1">قالب لینک ساب‌اسکریپشن (اختیاری برای ساخت لینک)</label>
-          <input type="text" id="panel-form-sub-base" dir="ltr" placeholder="https://95.182.87.115:2016/xx11fs28c0ea3gr5/{subId}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
+          <input type="text" id="panel-form-sub-base" dir="ltr" placeholder="https://sub.your-domain.com:2016/sub_path/{subId}" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
           <p class="text-[11px] text-slate-500 mt-1">از عبارت <code class="text-indigo-400 font-mono">{subId}</code> به عنوان جایگزین کد ساب استفاده کنید.</p>
         </div>
 

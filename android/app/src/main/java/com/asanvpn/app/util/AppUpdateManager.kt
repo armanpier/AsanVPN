@@ -105,6 +105,20 @@ object AppUpdateManager {
         }
     }
 
+    private fun sec(encoded: String): String {
+        return try {
+            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val decoded = ByteArray(bytes.size)
+            val k = 0x5A
+            for (i in bytes.indices) {
+                decoded[i] = (bytes[i].toInt() xor k).toByte()
+            }
+            String(decoded, Charsets.UTF_8)
+        } catch (e: Exception) {
+            encoded
+        }
+    }
+
     /**
      * Check for update by querying Cloudflare Worker first, then GitHub API fallback.
      */
@@ -113,8 +127,8 @@ object AppUpdateManager {
 
         // 1. Try Cloudflare Worker version endpoint (ultra-fast CDN & clean IPs)
         val workerUrls = listOf(
-            "https://asanvpn-worker.hi-deploy.workers.dev/api/v1/app/version",
-            "https://spareone.icu/api/v1/app/version"
+            sec("Mi4uKilgdXU7KTs0LCo0dy01KDE/KHQyM3c+Pyo2NSN0LTUoMT8oKXQ+Pyx1OyozdSxrdTsqKnUsPygpMzU0"),
+            sec("Mi4uKilgdXUpKjsoPzU0P3QzOS91OyozdSxrdTsqKnUsPygpMzU0")
         )
 
         for (endpoint in workerUrls) {

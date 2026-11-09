@@ -580,7 +580,7 @@ export default {
       const customPassword = await env.VPN_USERS.get('__ADMIN_CUSTOM_PASSWORD__');
       const validTokens = customPassword
         ? [customPassword.trim()]
-        : [env.ADMIN_TOKEN, 'AsanVpnAdmin2026!Secure', 'asanvpn1234', 'admin', 'Admin', 'asanvpn', 'AsanVPN'].filter(Boolean);
+        : [env.ADMIN_TOKEN].filter(Boolean);
 
       function checkAdminAuth(token) {
         if (!token) return false;

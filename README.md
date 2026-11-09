@@ -133,8 +133,8 @@ flowchart TD
 
 5. **Access Dashboard**:
    Open `https://your-worker.workers.dev/admin` in your browser.
-   - Default master token: `AsanVpnAdmin2026!Secure` (or `admin`).
-   - You can change your password immediately in **Settings (تنظیمات)**.
+   - Enter your configured `ADMIN_TOKEN` secret.
+   - You can set and update your custom dashboard password in **Settings (تنظیمات)**.
 
 ---
 

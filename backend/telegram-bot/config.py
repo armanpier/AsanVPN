@@ -9,14 +9,14 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "asan_vpn_p_bot").strip().lstrip("@")
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()]
 
 # HooshPay Payment Gateway
-HOOSHPAY_API_KEY = os.getenv("HOOSHPAY_API_KEY", "hp_live_694d93558b7aa341d045a24e167ae0e8db0e9cc8").strip()
-HOOSHPAY_API_SECRET = os.getenv("HOOSHPAY_API_SECRET", "6f9b9d01dd39afe3e2240107ba2805ebb255dc122448a4a0").strip()
+HOOSHPAY_API_KEY = os.getenv("HOOSHPAY_API_KEY", "").strip()
+HOOSHPAY_API_SECRET = os.getenv("HOOSHPAY_API_SECRET", "").strip()
 HOOSHPAY_BASE_URL = os.getenv("HOOSHPAY_BASE_URL", "https://pay.hooshnet.com/api/v1").rstrip("/")
 HOOSHPAY_RETURN_URL = f"https://t.me/{BOT_USERNAME}"
 
 # Cloudflare Worker Admin
 WORKER_URL = os.getenv("WORKER_URL", "https://asanvpn-worker.hi-deploy.workers.dev").rstrip("/")
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "Arman4237340").strip()
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 # Support & Channels
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@Sib_Support_P").strip()

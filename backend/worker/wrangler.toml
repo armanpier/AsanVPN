@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 account_id = "f00dbc59270d5615cadcab84c18cd9be"
 
 [vars]
-ADMIN_TOKEN = "AsanVpnAdmin2026!Secure"
+ADMIN_TOKEN = "CHANGE_THIS_TO_YOUR_SECURE_TOKEN"
 DEFAULT_SUPPORT_PHONE = "+989120000000"
 SUPPORT_TELEGRAM = "AsanSupport"
 

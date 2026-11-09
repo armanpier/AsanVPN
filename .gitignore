@@ -29,6 +29,16 @@ user_*.json
 *.log
 *.dump
 
+# Databases & Backups
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+backup/
+backups/
+
 # OS / IDE
 .vscode/
 Thumbs.db
