@@ -418,6 +418,25 @@ class BotDatabase:
             await db.execute("DELETE FROM test_claims WHERE pin = ?", (clean_pin,))
             await db.commit()
 
+    async def get_linked_telegram_ids_by_pin(self, pin: str) -> list:
+        """Find all telegram IDs associated with a PIN in pinned accounts and orders"""
+        clean_pin = str(pin).strip()
+        linked_users = []
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT telegram_id FROM user_pinned_accounts WHERE pin = ?", (clean_pin,)) as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    if r["telegram_id"] not in linked_users:
+                        linked_users.append(r["telegram_id"])
+
+            async with db.execute("SELECT DISTINCT telegram_id FROM orders WHERE assigned_pin = ?", (clean_pin,)) as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    if r["telegram_id"] not in linked_users:
+                        linked_users.append(r["telegram_id"])
+        return linked_users
+
     async def remove_subscription_by_pin(self, pin: str) -> dict:
         """
         Purge/revoke a subscription PIN from SQLite and return linked user ids.

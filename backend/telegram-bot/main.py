@@ -4,6 +4,7 @@ import random
 import asyncio
 import logging
 import time
+import aiosqlite
 from datetime import datetime
 from telegram import (
     Update,
@@ -903,100 +904,101 @@ async def show_admin_del_pin_card(update: Update, context: ContextTypes.DEFAULT_
     else:
         msg = await update.message.reply_text(loading_text, parse_mode=ParseMode.HTML)
 
-    user_record = await worker.get_user_by_pin(clean_pin)
+    try:
+        user_record = await worker.get_user_by_pin(clean_pin)
 
-    linked_tids = []
-    if target_tid:
-        linked_tids.append(target_tid)
+        linked_tids = []
+        if target_tid:
+            linked_tids.append(target_tid)
 
-    async with aiosqlite.connect(db.db_path) as conn:
-        conn.row_factory = aiosqlite.Row
-        async with conn.execute("SELECT telegram_id FROM user_pinned_accounts WHERE pin = ?", (clean_pin,)) as cur:
-            rows = await cur.fetchall()
-            for r in rows:
-                if r["telegram_id"] not in linked_tids:
-                    linked_tids.append(r["telegram_id"])
-        async with conn.execute("SELECT DISTINCT telegram_id FROM orders WHERE assigned_pin = ?", (clean_pin,)) as cur:
-            rows = await cur.fetchall()
-            for r in rows:
-                if r["telegram_id"] not in linked_tids:
-                    linked_tids.append(r["telegram_id"])
+        db_tids = await db.get_linked_telegram_ids_by_pin(clean_pin)
+        for tid in db_tids:
+            if tid not in linked_tids:
+                linked_tids.append(tid)
 
-    linked_tids_str = ", ".join([f"<code>{tid}</code>" for tid in linked_tids]) if linked_tids else "ثبت نشده"
+        linked_tids_str = ", ".join([f"<code>{tid}</code>" for tid in linked_tids]) if linked_tids else "ثبت نشده"
 
-    if not user_record:
+        if not user_record:
+            text = (
+                f"⚠️ <b>اشتراک در ورکر کلودفلر یافت نشد!</b>\n\n"
+                f"کد <code>{clean_pin}</code> در سرورهای ابری کلودفلر وجود ندارد یا قبلاً حذف شده است.\n"
+                f"👤 شناسه‌های مرتبط در دیتابیس ربات: {linked_tids_str}\n\n"
+                "آیا مایلید این کد از دیتابیس ربات و سوابق پاکسازی شود؟"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🗑 پاکسازی کامل از دیتابیس ربات", callback_data=f"admin_del_confirm:{clean_pin}")],
+                [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_remove_sub")],
+                [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+            ])
+            await msg.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+            return
+
+        name = user_record.get("name") or "کاربر آسان وی‌پی‌ان"
+        now = int(time.time())
+        expires_at = user_record.get("expires_at")
+        if expires_at and expires_at > 0:
+            days_left = max(0, (expires_at - now) // 86400)
+            import datetime
+            dt = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+            exp_date_str = dt.strftime("%Y-%m-%d")
+            exp_str = f"<b>{days_left} روز باقی‌مانده</b> ({exp_date_str})"
+        else:
+            exp_str = "<b>نامحدود / بدون انقضا</b>"
+
+        traffic_total = user_record.get("traffic_total_bytes", 0)
+        traffic_rem = user_record.get("traffic_remaining_bytes", -1)
+        if traffic_rem == -1 or traffic_total == 0:
+            traffic_str = "<b>نامحدود</b>"
+        else:
+            rem_gb = round(traffic_rem / (1024**3), 2)
+            tot_gb = round(traffic_total / (1024**3), 2)
+            used_gb = round(max(0, traffic_total - traffic_rem) / (1024**3), 2)
+            traffic_str = f"<b>{used_gb} GB مصرفی</b> از {tot_gb} GB ({rem_gb} GB مانده)"
+
+        devices = user_record.get("devices", [])
+        max_dev = user_record.get("max_devices", 2)
+        dev_str = f"<b>{len(devices)} از {max_dev} دستگاه فعال</b>"
+
+        panel_mappings = user_record.get("remote_panel_mappings", {})
+        if isinstance(panel_mappings, dict) and panel_mappings:
+            panels_str = f"متصل به {len(panel_mappings)} پنل سرور ({', '.join(panel_mappings.keys())})"
+        else:
+            panels_str = "بدون سرور متصل"
+
+        active = user_record.get("active", True)
+        status_icon = "🟢 فعال" if active else "🔴 غیرفعال / منقضی"
+
         text = (
-            f"⚠️ <b>اشتراک در ورکر کلودفلر یافت نشد!</b>\n\n"
-            f"کد <code>{clean_pin}</code> در سرورهای ابری کلودفلر وجود ندارد یا قبلاً حذف شده است.\n"
-            f"👤 شناسه‌های مرتبط در دیتابیس ربات: {linked_tids_str}\n\n"
-            "آیا مایلید این کد از دیتابیس ربات و سوابق پاکسازی شود؟"
+            "⚠️ <b>بررسی و تأییدیه حذف اشتراک:</b>\n"
+            "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+            f"🔑 <b>کد اختصاصی اشتراک (PIN):</b> <code>{clean_pin}</code>\n"
+            f"👤 <b>نام کاربر / برچسب:</b> {name}\n"
+            f"🆔 <b>آیدی تلگرام مرتبط:</b> {linked_tids_str}\n"
+            f"⚡️ <b>وضعیت اتصال:</b> {status_icon}\n"
+            f"📊 <b>حجم ترافیک:</b> {traffic_str}\n"
+            f"⏳ <b>اعتبار زمانی:</b> {exp_str}\n"
+            f"📱 <b>دستگاه‌های همزمان:</b> {dev_str}\n"
+            f"🌐 <b>پنل‌های شبکه:</b> {panels_str}\n"
+            "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+            "⛔️ <b>هشدار مهم:</b> با تأیید، این اشتراک <b>بلافاصله و به طور دائمی</b> از ورکر کلودفلر، سرورها و پنل‌های بالادستی حذف شده، اتصال کاربر قطع و کد از دیتابیس ربات پاک خواهد شد!\n\n"
+            "آیا از حذف کامل این اشتراک اطمینان دارید؟"
         )
+
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🗑 پاکسازی کامل از دیتابیس ربات", callback_data=f"admin_del_confirm:{clean_pin}")],
+            [InlineKeyboardButton("🗑 بله، اشتراک حذف و مسدود شود", callback_data=f"admin_del_confirm:{clean_pin}")],
             [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_remove_sub")],
             [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
         ])
+
         await msg.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
-        return
-
-    name = user_record.get("name") or "کاربر آسان وی‌پی‌ان"
-    now = int(time.time())
-    expires_at = user_record.get("expires_at")
-    if expires_at and expires_at > 0:
-        days_left = max(0, (expires_at - now) // 86400)
-        import datetime
-        dt = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
-        exp_date_str = dt.strftime("%Y-%m-%d")
-        exp_str = f"<b>{days_left} روز باقی‌مانده</b> ({exp_date_str})"
-    else:
-        exp_str = "<b>نامحدود / بدون انقضا</b>"
-
-    traffic_total = user_record.get("traffic_total_bytes", 0)
-    traffic_rem = user_record.get("traffic_remaining_bytes", -1)
-    if traffic_rem == -1 or traffic_total == 0:
-        traffic_str = "<b>نامحدود</b>"
-    else:
-        rem_gb = round(traffic_rem / (1024**3), 2)
-        tot_gb = round(traffic_total / (1024**3), 2)
-        used_gb = round(max(0, traffic_total - traffic_rem) / (1024**3), 2)
-        traffic_str = f"<b>{used_gb} GB مصرفی</b> از {tot_gb} GB ({rem_gb} GB مانده)"
-
-    devices = user_record.get("devices", [])
-    max_dev = user_record.get("max_devices", 2)
-    dev_str = f"<b>{len(devices)} از {max_dev} دستگاه فعال</b>"
-
-    panel_mappings = user_record.get("remote_panel_mappings", {})
-    if isinstance(panel_mappings, dict) and panel_mappings:
-        panels_str = f"متصل به {len(panel_mappings)} پنل سرور ({', '.join(panel_mappings.keys())})"
-    else:
-        panels_str = "بدون سرور متصل"
-
-    active = user_record.get("active", True)
-    status_icon = "🟢 فعال" if active else "🔴 غیرفعال / منقضی"
-
-    text = (
-        "⚠️ <b>بررسی و تأییدیه حذف اشتراک:</b>\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        f"🔑 <b>کد اختصاصی اشتراک (PIN):</b> <code>{clean_pin}</code>\n"
-        f"👤 <b>نام کاربر / برچسب:</b> {name}\n"
-        f"🆔 <b>آیدی تلگرام مرتبط:</b> {linked_tids_str}\n"
-        f"⚡️ <b>وضعیت اتصال:</b> {status_icon}\n"
-        f"📊 <b>حجم ترافیک:</b> {traffic_str}\n"
-        f"⏳ <b>اعتبار زمانی:</b> {exp_str}\n"
-        f"📱 <b>دستگاه‌های همزمان:</b> {dev_str}\n"
-        f"🌐 <b>پنل‌های شبکه:</b> {panels_str}\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "⛔️ <b>هشدار مهم:</b> با تأیید، این اشتراک <b>بلافاصله و به طور دائمی</b> از ورکر کلودفلر، سرورها و پنل‌های بالادستی حذف شده، اتصال کاربر قطع و کد از دیتابیس ربات پاک خواهد شد!\n\n"
-        "آیا از حذف کامل این اشتراک اطمینان دارید؟"
-    )
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗑 بله، اشتراک حذف و مسدود شود", callback_data=f"admin_del_confirm:{clean_pin}")],
-        [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_remove_sub")],
-        [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
-    ])
-
-    await msg.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logger.exception(f"Error inspecting PIN {clean_pin}: {e}")
+        err_text = f"❌ بروز خطا در بررسی اشتراک {clean_pin}:\n<code>{e}</code>"
+        err_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 تلاش مجدد", callback_data=f"admin_del_pin_view:{clean_pin}")],
+            [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+        ])
+        await msg.edit_text(err_text, reply_markup=err_kb, parse_mode=ParseMode.HTML)
 
 async def process_admin_sub_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE, query_str: str):
     user_id = update.effective_user.id
