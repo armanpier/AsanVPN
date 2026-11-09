@@ -21,7 +21,7 @@ object PingTester {
 
     private const val TAG = "PingTester"
     private const val TEST_URL_PRIMARY = "https://cp.cloudflare.com/generate_204"
-    private const val TEST_URL_FALLBACK = "http://www.gstatic.com/generate_204"
+    private const val TEST_URL_FALLBACK = "https://www.gstatic.com/generate_204"
 
     /**
      * Connects IMMEDIATELY to the first verified working link (fast connect),

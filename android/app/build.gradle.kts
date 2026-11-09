@@ -61,6 +61,9 @@ android {
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/*.version"
+            excludes += "META-INF/version-control-info.textproto"
+            excludes += "META-INF/com/android/build/gradle/app-metadata.properties"
         }
     }
 }
