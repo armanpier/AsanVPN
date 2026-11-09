@@ -3,6 +3,8 @@ package com.asanvpn.app.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
@@ -24,9 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -85,8 +89,8 @@ fun ConnectScreen(
     // Pulse animation for connecting state
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.05f,
+        initialValue = 0.97f,
+        targetValue = 1.04f,
         animationSpec = infiniteRepeatable(
             animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -105,23 +109,14 @@ fun ConnectScreen(
         label = "glow"
     )
 
-    // Status attributes
-    val dialGradient = when (connectionState) {
-        ConnectionState.DISCONNECTED -> listOf(DialBgOff, Color(0xFF131720))
-        ConnectionState.CONNECTING -> listOf(Color(0xFF3B2A08), Color(0xFF1E1706))
-        ConnectionState.CONNECTED -> listOf(DialBgOn, Color(0xFF042F24))
-    }
-
-    val dialBorderColor = when (connectionState) {
-        ConnectionState.DISCONNECTED -> DialBorderOff
-        ConnectionState.CONNECTING -> AmberConnecting
-        ConnectionState.CONNECTED -> DialBorderOn
-    }
+    // Modern Neumorphic Dial Visuals
+    val isConnected = connectionState == ConnectionState.CONNECTED
+    val isConnecting = connectionState == ConnectionState.CONNECTING
 
     val iconColor = when (connectionState) {
-        ConnectionState.DISCONNECTED -> RedOff
+        ConnectionState.DISCONNECTED -> TextSecondary
         ConnectionState.CONNECTING -> AmberConnecting
-        ConnectionState.CONNECTED -> GreenOnLight
+        ConnectionState.CONNECTED -> GreenConnected
     }
 
     val statusBadgeText = when (connectionState) {
@@ -150,11 +145,7 @@ fun ConnectScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(BgDark, BgGradientBottom)
-                )
-            )
+            .background(NeumorphBg)
             .padding(horizontal = 20.dp, vertical = 16.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -165,7 +156,7 @@ fun ConnectScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top App Bar: Debug button & User Profile
+            // Top App Bar: Debug button & User Profile Chip
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -173,181 +164,217 @@ fun ConnectScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Discreet Debug Info Icon
-                IconButton(
-                    onClick = { showDebugDialog = true },
-                    modifier = Modifier.size(38.dp)
+                // Discreet Debug Info Icon in soft neumorphic button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
+                        .clickable { showDebugDialog = true },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = "گزارش وضعیت",
-                        tint = TextDarker,
-                        modifier = Modifier.size(20.dp)
+                        tint = TextSecondary,
+                        modifier = Modifier.size(19.dp)
                     )
                 }
 
-                // User Profile Chip
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // User Profile Chip (Neumorphic Raised Pill)
+                Box(
+                    modifier = Modifier
+                        .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text(
-                        text = userName,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextWhite
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(CardDarkElevated)
-                            .border(1.dp, CardBorder, CircleShape),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = AccentCyan,
-                            modifier = Modifier.size(18.dp)
+                        Text(
+                            text = userName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
                         )
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(AccentCyanSoft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = AccentCyan,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // ---------------- SUBSCRIPTION STATUS PILLS (DAYS & TRAFFIC) ----------------
+            // ---------------- SUBSCRIPTION STATUS CARDS (DAYS & TRAFFIC) ----------------
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Subscription Days Remaining Pill
+                // Subscription Days Remaining Card
                 val isUnlimitedDays = daysLeft < 0
                 val isCriticalDays = !isUnlimitedDays && daysLeft in 0..3
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(CardDarkElevated)
-                        .border(
-                            width = 1.dp,
-                            color = if (isCriticalDays) RedOff.copy(alpha = 0.5f) else CardBorder,
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    contentAlignment = Alignment.Center
+                        .neumorphicRaised(shape = RoundedCornerShape(18.dp), elevation = 5.dp)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Column(
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = if (isCriticalDays) RedOff else AccentCyan,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isCriticalDays) RedOff.copy(alpha = 0.15f) else AccentCyanSoft),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = if (isCriticalDays) RedOff else AccentCyan,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                            Text(
+                                text = "اعتبار زمانی",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextSecondary
+                            )
+                        }
                         Text(
                             text = when {
-                                isUnlimitedDays -> "اشتراک نامحدود"
-                                daysLeft == 0 -> "امروز آخرین مهلت"
-                                else -> "$daysLeft روز اعتبار"
+                                isUnlimitedDays -> "نامحدود"
+                                daysLeft == 0 -> "پایان امروز"
+                                else -> "$daysLeft روز"
                             },
-                            fontSize = 12.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isCriticalDays) RedOff else TextWhite
+                            color = if (isCriticalDays) RedOff else TextPrimary
                         )
                     }
                 }
 
-                // Traffic Remaining Pill
+                // Traffic Remaining Card
                 val isTrafficUnlimited = trafficRemainingBytes < 0L || trafficTotalBytes <= 0L
                 val isLowRemaining = !isTrafficUnlimited && trafficRemainingBytes in 1 until (1024L * 1024L * 1024L)
                 val isExhaustedRemaining = !isTrafficUnlimited && trafficRemainingBytes == 0L
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(CardDarkElevated)
-                        .border(
-                            width = 1.dp,
-                            color = when {
-                                isExhaustedRemaining -> RedOff.copy(alpha = 0.7f)
-                                isLowRemaining -> Color(0xFFF59E0B).copy(alpha = 0.7f)
-                                else -> CardBorder
-                            },
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    contentAlignment = Alignment.Center
+                        .neumorphicRaised(shape = RoundedCornerShape(18.dp), elevation = 5.dp)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Column(
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.DataUsage,
-                            contentDescription = null,
-                            tint = when {
-                                isExhaustedRemaining -> RedOff
-                                isLowRemaining -> Color(0xFFF59E0B)
-                                else -> AccentCyan
-                            },
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            isExhaustedRemaining -> RedOff.copy(alpha = 0.15f)
+                                            isLowRemaining -> AmberConnecting.copy(alpha = 0.15f)
+                                            else -> Color(0xFFDCFCE7) // Soft Green
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DataUsage,
+                                    contentDescription = null,
+                                    tint = when {
+                                        isExhaustedRemaining -> RedOff
+                                        isLowRemaining -> AmberConnecting
+                                        else -> GreenConnected
+                                    },
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                            Text(
+                                text = "حجم اشتراک",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextSecondary
+                            )
+                        }
                         Text(
-                            text = if (isTrafficUnlimited) "حجم نامحدود" else "${formatTrafficRemaining(trafficRemainingBytes)} باقی‌مانده",
-                            fontSize = 12.sp,
+                            text = if (isTrafficUnlimited) "نامحدود" else formatTrafficRemaining(trafficRemainingBytes),
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = when {
                                 isExhaustedRemaining -> RedOff
-                                isLowRemaining -> Color(0xFFF59E0B)
-                                else -> TextWhite
+                                isLowRemaining -> AmberConnecting
+                                else -> TextPrimary
                             }
                         )
                     }
                 }
             }
 
-            // ---------------- PERSISTENT LOW TRAFFIC WARNING NOTIFICATION ----------------
+            // ---------------- LOW TRAFFIC WARNING BANNER ----------------
             val isTrafficUnlimited = trafficRemainingBytes < 0L || trafficTotalBytes <= 0L
             val isLowTrafficWarning = !isTrafficUnlimited && trafficRemainingBytes in 1 until (1024L * 1024L * 1024L)
             val isExhaustedWarning = !isTrafficUnlimited && trafficRemainingBytes == 0L
 
             if (isLowTrafficWarning || isExhaustedWarning) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isExhaustedWarning) Color(0xFF330C0C) else Color(0xFF2E1A05)
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isExhaustedWarning) RedOff.copy(alpha = 0.8f) else Color(0xFFF59E0B).copy(alpha = 0.8f)
-                    )
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                        .background(
+                            if (isExhaustedWarning) Color(0xFFFEF2F2) else Color(0xFFFFFBEB),
+                            RoundedCornerShape(16.dp)
+                        )
+                        .border(
+                            1.dp,
+                            if (isExhaustedWarning) RedOff.copy(alpha = 0.4f) else AmberConnecting.copy(alpha = 0.4f),
+                            RoundedCornerShape(16.dp)
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(32.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    if (isExhaustedWarning) RedOff.copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                    if (isExhaustedWarning) RedOff.copy(alpha = 0.15f) else AmberConnecting.copy(alpha = 0.15f)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Warning,
                                 contentDescription = "هشدار حجم",
-                                tint = if (isExhaustedWarning) RedOff else Color(0xFFF59E0B),
+                                tint = if (isExhaustedWarning) RedOff else AmberConnecting,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -360,17 +387,17 @@ fun ConnectScreen(
                                 text = if (isExhaustedWarning)
                                     "⚠️ حجم اشتراک شما به پایان رسیده است!"
                                 else
-                                    "⚠️ حجم رو به پایان است: کمتر از ۱ گیگابایت (${formatTrafficRemaining(trafficRemainingBytes)})",
+                                    "⚠️ حجم رو به پایان است: (${formatTrafficRemaining(trafficRemainingBytes)})",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isExhaustedWarning) RedOff else Color(0xFFFFB74D),
+                                color = if (isExhaustedWarning) RedOff else Color(0xFFB45309),
                                 textAlign = TextAlign.Right
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "جهت جلوگیری از قطع ارتباط، نسبت به تمدید اشتراک اقدام فرمایید.",
+                                text = "جهت جلوگیری از قطع ارتباط، نسبت به تمدید اقدام فرمایید.",
                                 fontSize = 11.sp,
-                                color = TextMuted,
+                                color = TextSecondary,
                                 textAlign = TextAlign.Right
                             )
                         }
@@ -381,27 +408,22 @@ fun ConnectScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // ---------------- SERVER SELECTION & QUALITY CARD ----------------
-            Card(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp)),
-                colors = CardDefaults.cardColors(containerColor = CardDark),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    .neumorphicRaised(shape = RoundedCornerShape(20.dp), elevation = 5.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Ping latency badge
+                    // Ping latency badge (Sunken soft well)
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF0F172A))
-                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .neumorphicSunken(shape = RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -411,13 +433,13 @@ fun ConnectScreen(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(if (connectionState == ConnectionState.CONNECTED) GreenOn else TextDarker)
+                                    .background(if (isConnected) GreenConnected else TextMuted)
                             )
                             Text(
                                 text = "$serverPing ms",
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (connectionState == ConnectionState.CONNECTED) GreenOnLight else TextMuted
+                                fontWeight = FontWeight.Bold,
+                                color = if (isConnected) GreenConnected else TextSecondary
                             )
                         }
                     }
@@ -434,12 +456,12 @@ fun ConnectScreen(
                                 text = serverRemark,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TextWhite
+                                color = TextPrimary
                             )
                             Icon(
                                 imageVector = Icons.Default.Public,
                                 contentDescription = null,
-                                tint = AccentCyan,
+                                tint = AccentTeal,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -447,7 +469,7 @@ fun ConnectScreen(
                         Text(
                             text = "انتخاب هوشمند بهترین سرور با پینگ پایین",
                             fontSize = 11.sp,
-                            color = TextDarker
+                            color = TextSecondary
                         )
                     }
                 }
@@ -456,7 +478,8 @@ fun ConnectScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // ---------------- CENTERPIECE: SLEEK NEAT POWER DIAL ----------------
+        // ---------------- CENTERPIECE: 3D NEUMORPHIC POWER DIAL ----------------
+        // Conceived as a multi-layered soft 3D dial directly matching the reference image thermostat
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
@@ -468,53 +491,78 @@ fun ConnectScreen(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        enabled = connectionState != ConnectionState.CONNECTING
+                        enabled = !isConnecting
                     ) {
                         onToggleConnect()
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // Outer Ambient Glow
+                // Layer 1: Ambient Active Glow (when connecting or connected)
                 if (connectionState != ConnectionState.DISCONNECTED) {
                     Box(
                         modifier = Modifier
-                            .size(230.dp)
-                            .scale(if (connectionState == ConnectionState.CONNECTING) pulseScale else 1f)
+                            .size(236.dp)
+                            .scale(if (isConnecting) pulseScale else 1f)
                             .clip(CircleShape)
                             .background(
-                                if (connectionState == ConnectionState.CONNECTED) {
-                                    GreenOnGlow.copy(alpha = glowAlpha)
-                                } else {
-                                    AmberGlow.copy(alpha = glowAlpha)
-                                }
+                                if (isConnected) GreenConnectedGlow.copy(alpha = glowAlpha)
+                                else AmberConnectingGlow.copy(alpha = glowAlpha)
                             )
                     )
                 }
 
-                // Decorative Outer Ring
+                // Layer 2: Outer Extruded Neumorphic Rim
                 Box(
                     modifier = Modifier
-                        .size(210.dp)
-                        .clip(CircleShape)
+                        .size(220.dp)
+                        .shadow(
+                            elevation = if (isConnected) 12.dp else 8.dp,
+                            shape = CircleShape,
+                            ambientColor = NeumorphDarkShadow.copy(alpha = 0.7f),
+                            spotColor = NeumorphDarkShadow.copy(alpha = 0.7f)
+                        )
+                        .background(NeumorphSurface, CircleShape)
                         .border(
-                            width = 2.dp,
-                            color = dialBorderColor.copy(alpha = 0.4f),
+                            width = 1.5.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color.White, Color.White.copy(alpha = 0.3f), NeumorphDarkShadow.copy(alpha = 0.4f)),
+                                start = Offset(0f, 0f),
+                                end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                            ),
                             shape = CircleShape
                         )
                 )
 
-                // Interactive Main Power Dial
+                // Layer 3: Concentric Inset Groove (Separator)
                 Box(
                     modifier = Modifier
-                        .size(180.dp)
-                        .shadow(elevation = 16.dp, shape = CircleShape)
-                        .clip(CircleShape)
+                        .size(185.dp)
+                        .neumorphicSunken(shape = CircleShape, cavityColor = Color(0xFFE8EDF5))
+                )
+
+                // Layer 4: Central Raised 3D Power Dial Face
+                Box(
+                    modifier = Modifier
+                        .size(158.dp)
+                        .shadow(
+                            elevation = 6.dp,
+                            shape = CircleShape,
+                            ambientColor = NeumorphDarkShadow.copy(alpha = 0.6f),
+                            spotColor = NeumorphDarkShadow.copy(alpha = 0.6f)
+                        )
                         .background(
-                            Brush.radialGradient(colors = dialGradient)
+                            Brush.radialGradient(
+                                colors = if (isConnected) {
+                                    listOf(Color(0xFFF0FDF4), Color(0xFFDCFCE7), NeumorphSurface)
+                                } else {
+                                    listOf(Color.White, NeumorphSurfaceElevated, NeumorphSurface)
+                                }
+                            ),
+                            CircleShape
                         )
                         .border(
-                            width = 3.dp,
-                            color = dialBorderColor,
+                            width = if (isConnected) 2.5.dp else 1.5.dp,
+                            color = if (isConnected) GreenConnected.copy(alpha = 0.8f) else Color.White,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -527,7 +575,7 @@ fun ConnectScreen(
                             imageVector = Icons.Default.PowerSettingsNew,
                             contentDescription = "اتصال وی‌پی‌ان",
                             tint = iconColor,
-                            modifier = Modifier.size(64.dp)
+                            modifier = Modifier.size(62.dp)
                         )
                     }
                 }
@@ -541,9 +589,9 @@ fun ConnectScreen(
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = when (connectionState) {
-                    ConnectionState.DISCONNECTED -> TextWhite
+                    ConnectionState.DISCONNECTED -> TextPrimary
                     ConnectionState.CONNECTING -> AmberConnecting
-                    ConnectionState.CONNECTED -> GreenOnLight
+                    ConnectionState.CONNECTED -> GreenConnected
                 },
                 textAlign = TextAlign.Center
             )
@@ -553,21 +601,19 @@ fun ConnectScreen(
             Text(
                 text = statusSubText,
                 fontSize = 12.sp,
-                color = TextMuted,
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
-            // Dynamic Live Connection Duration Counter
-            AnimatedVisibility(visible = connectionState == ConnectionState.CONNECTED) {
+            // Dynamic Live Connection Duration Counter (Neumorphic Pill)
+            AnimatedVisibility(visible = isConnected) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(top = 10.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(CardDarkElevated)
-                            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                            .neumorphicSunken(shape = RoundedCornerShape(14.dp))
                             .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Row(
@@ -577,14 +623,14 @@ fun ConnectScreen(
                             Icon(
                                 imageVector = Icons.Default.Timer,
                                 contentDescription = null,
-                                tint = GreenOn,
-                                modifier = Modifier.size(16.dp)
+                                tint = GreenConnected,
+                                modifier = Modifier.size(15.dp)
                             )
                             Text(
                                 text = "مدت اتصال: ${formatDuration(connectedSeconds)}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextWhite
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
                             )
                         }
                     }
@@ -592,15 +638,13 @@ fun ConnectScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         // ---------------- IRAN SPLIT-TUNNELING ASSURANCE PILL ----------------
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF141922))
-                .border(1.dp, Color(0xFF1F2633), RoundedCornerShape(14.dp))
+                .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Row(
@@ -611,34 +655,32 @@ fun ConnectScreen(
                 Text(
                     text = "🇮🇷 بانک‌ها و سایت‌های ایرانی مستقیم باز می‌شوند",
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextMuted,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextSecondary,
                     textAlign = TextAlign.Center
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // ---------------- BOTTOM ACTIONS: SUPPORT & SWITCH PIN ----------------
+        // ---------------- BOTTOM ACTIONS: STATS, SUPPORT & SWITCH PIN ----------------
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // ---------------- TRAFFIC STATISTICS (IN / OUT) ----------------
-            Card(
+            // ---------------- TRAFFIC STATISTICS CARD (IN / OUT) ----------------
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(64.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = CardDarkElevated),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    .height(68.dp)
+                    .neumorphicRaised(shape = RoundedCornerShape(20.dp), elevation = 5.dp)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -650,7 +692,8 @@ fun ConnectScreen(
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .background(AccentCyan.copy(alpha = 0.15f), CircleShape),
+                                .clip(CircleShape)
+                                .background(AccentCyanSoft),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -665,21 +708,21 @@ fun ConnectScreen(
                                 text = "دریافت (In)",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = TextMuted
+                                color = TextSecondary
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = downloadTraffic,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = TextWhite
+                                    color = TextPrimary
                                 )
                                 if (downloadSpeed.isNotBlank()) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = downloadSpeed,
                                         fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
+                                        fontWeight = FontWeight.Bold,
                                         color = AccentCyan
                                     )
                                 }
@@ -690,9 +733,9 @@ fun ConnectScreen(
                     // Vertical Divider
                     Box(
                         modifier = Modifier
-                            .height(30.dp)
+                            .height(28.dp)
                             .width(1.dp)
-                            .background(CardBorder)
+                            .background(NeumorphDarkShadow.copy(alpha = 0.5f))
                     )
 
                     // OUT (ارسال / آپلود)
@@ -703,13 +746,14 @@ fun ConnectScreen(
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .background(GreenOn.copy(alpha = 0.15f), CircleShape),
+                                .clip(CircleShape)
+                                .background(Color(0xFFDCFCE7)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ArrowUpward,
                                 contentDescription = "ارسال (Out)",
-                                tint = GreenOn,
+                                tint = GreenConnected,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -718,27 +762,64 @@ fun ConnectScreen(
                                 text = "ارسال (Out)",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = TextMuted
+                                color = TextSecondary
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = uploadTraffic,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = TextWhite
+                                    color = TextPrimary
                                 )
                                 if (uploadSpeed.isNotBlank()) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = uploadSpeed,
                                         fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = GreenOn
+                                        fontWeight = FontWeight.Bold,
+                                        color = GreenConnected
                                     )
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            // Telegram Bot Buy / Renew Button (Neumorphic Warm Accent Pill)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .height(48.dp)
+                    .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                    .clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/asan_vpn_p_bot"))
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "تلگرام یافت نشد: t.me/asan_vpn_p_bot", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = null,
+                        tint = AccentCoral,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "خرید یا تمدید اشتراک در تلگرام",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentCoral
+                    )
                 }
             }
 
@@ -750,20 +831,20 @@ fun ConnectScreen(
                 Icon(
                     imageVector = Icons.Default.Key,
                     contentDescription = null,
-                    tint = TextDarker,
+                    tint = TextSecondary,
                     modifier = Modifier.size(15.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "ورود با کد اشتراک دیگر",
                     fontSize = 13.sp,
-                    color = TextMuted
+                    color = TextSecondary
                 )
             }
         }
     }
 
-    // ---------------- DEBUG LOG DIALOG (For Seller / Admin) ----------------
+    // ---------------- DEBUG LOG DIALOG ----------------
     if (showDebugDialog) {
         AlertDialog(
             onDismissRequest = { showDebugDialog = false },
@@ -772,7 +853,7 @@ fun ConnectScreen(
                     text = "گزارش وضعیت اتصال",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextWhite
+                    color = TextPrimary
                 )
             },
             text = {
@@ -780,7 +861,7 @@ fun ConnectScreen(
                     Text(
                         text = VpnRepository.lastDebugLog,
                         fontSize = 12.sp,
-                        color = TextMuted,
+                        color = TextSecondary,
                         lineHeight = 16.sp
                     )
                 }
@@ -794,16 +875,39 @@ fun ConnectScreen(
                         Toast.makeText(context, "گزارش در حافظه کپی شد", Toast.LENGTH_SHORT).show()
                     }
                 ) {
-                    Text("کپی گزارش", color = AccentCyan)
+                    Text("کپی گزارش", color = AccentTeal, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDebugDialog = false }) {
-                    Text("بستن", color = TextMuted)
+                    Text("بستن", color = TextSecondary)
                 }
             },
-            containerColor = CardDark,
-            shape = RoundedCornerShape(16.dp)
+            containerColor = NeumorphSurface,
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }
+
+@Preview(name = "Connect Screen - Neumorphic Light", showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+fun ConnectScreenPreview() {
+    AsanVpnTheme {
+        ConnectScreen(
+            userName = "کاربر گرامی (آرمان)",
+            daysLeft = 29,
+            trafficRemainingBytes = 25L * 1024 * 1024 * 1024,
+            trafficTotalBytes = 30L * 1024 * 1024 * 1024,
+            serverRemark = "🇩🇪 DE2 (سرور پیشنهادی)",
+            serverPing = 48L,
+            connectionState = ConnectionState.DISCONNECTED,
+            downloadTraffic = "۱.۲ GB",
+            uploadTraffic = "۳۴۰ MB",
+            downloadSpeed = "۲.۴ MB/s",
+            uploadSpeed = "۵۴۰ KB/s",
+            onToggleConnect = {},
+            onChangePin = {}
+        )
+    }
+}
+

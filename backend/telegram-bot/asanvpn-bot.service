@@ -1,0 +1,15 @@
+[Unit]
+Description=AsanVPN Telegram Sales & Payment Bot (@asan_vpn_p_bot)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/asanvpn-bot
+EnvironmentFile=/root/asanvpn-bot/.env
+ExecStart=/root/asanvpn-bot/venv/bin/python /root/asanvpn-bot/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

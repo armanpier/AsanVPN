@@ -72,8 +72,6 @@ class MainActivity : ComponentActivity() {
         prefs = PreferencesManager(this)
         repository = VpnRepository(this)
 
-        handleIncomingIntent(intent)
-
         currentPinState = prefs.savedPin
         currentUserName = prefs.userName
         currentDaysLeft = prefs.daysLeft
@@ -81,6 +79,8 @@ class MainActivity : ComponentActivity() {
         currentTrafficTotal = prefs.trafficTotalBytes
         currentServerRemark = prefs.selectedServerRemark
         currentServerPing = prefs.selectedServerPing
+
+        handleIncomingIntent(intent)
 
         if (AsanVpnService.isRunning) {
             connectionState = ConnectionState.CONNECTED
@@ -515,10 +515,81 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(incomingIntent: Intent?) {
-        val clipText = incomingIntent?.getStringExtra("clipboard_text")
-        if (!clipText.isNullOrEmpty()) {
-            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            cm?.setPrimaryClip(android.content.ClipData.newPlainText("pin", clipText))
+        var deepLinkPin: String? = null
+
+        // 1. Check URI from deep link or App Link (asanvpn://open?pin=88605949 or https://.../open?pin=88605949)
+        val dataUri = incomingIntent?.data
+        if (dataUri != null) {
+            val qPin = dataUri.getQueryParameter("pin")
+            if (!qPin.isNullOrBlank()) {
+                val cleaned = cleanDigits(qPin)
+                if (cleaned.length == 8) deepLinkPin = cleaned
+            } else {
+                val pathSegment = dataUri.pathSegments.lastOrNull()
+                if (pathSegment != null) {
+                    val cleaned = cleanDigits(pathSegment)
+                    if (cleaned.length == 8) deepLinkPin = cleaned
+                }
+            }
         }
+
+        // 2. Check Intent extras (clipboard_text or pin)
+        if (deepLinkPin.isNullOrBlank()) {
+            val extraPin = incomingIntent?.getStringExtra("pin") ?: incomingIntent?.getStringExtra("clipboard_text")
+            if (!extraPin.isNullOrBlank()) {
+                val cleaned = cleanDigits(extraPin)
+                if (cleaned.length == 8) deepLinkPin = cleaned
+            }
+        }
+
+        // 3. If valid 8-digit PIN received from link:
+        if (!deepLinkPin.isNullOrBlank() && deepLinkPin.length == 8) {
+            try {
+                // Copy to system clipboard
+                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("pin", deepLinkPin))
+            } catch (e: Exception) {}
+
+            Toast.makeText(this, "کد اشتراک $deepLinkPin دریافت و فعال شد", Toast.LENGTH_LONG).show()
+
+            // Automatically set up and verify with backend
+            verifyPinAndSetup(deepLinkPin)
+        }
+
+        if (incomingIntent?.getBooleanExtra("mock_connect", false) == true) {
+            currentPinState = "88605949"
+            currentUserName = "کاربر گرامی (آرمان)"
+            currentDaysLeft = 29
+            currentTrafficRemaining = 25L * 1024 * 1024 * 1024
+            currentTrafficTotal = 30L * 1024 * 1024 * 1024
+            currentServerRemark = "🇩🇪 DE2 (سرور پیشنهادی)"
+            currentServerPing = 48L
+            downloadTrafficState = "۲.۴ GB"
+            uploadTrafficState = "۴۵۰ MB"
+            downloadSpeedState = "۴.۲ MB/s"
+            uploadSpeedState = "۸۲۰ KB/s"
+        }
+    }
+
+    private fun cleanDigits(raw: String): String {
+        val persianDigits = "۰۱۲۳۴۵۶۷۸۹"
+        val arabicDigits = "٠١٢٣٤٥٦٧٨٩"
+        val sb = StringBuilder()
+        for (ch in raw) {
+            val pIdx = persianDigits.indexOf(ch)
+            if (pIdx >= 0) {
+                sb.append(pIdx)
+                continue
+            }
+            val aIdx = arabicDigits.indexOf(ch)
+            if (aIdx >= 0) {
+                sb.append(aIdx)
+                continue
+            }
+            if (ch in '0'..'9') {
+                sb.append(ch)
+            }
+        }
+        return sb.toString()
     }
 }

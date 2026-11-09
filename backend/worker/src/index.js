@@ -4,6 +4,8 @@ import { PanelAdapter } from './panels/panel_adapter.js';
 import { PanelManager, universalFetch } from './panels/panel_manager.js';
 import { DeviceLock } from './auth/device_lock.js';
 import { getAdminDashboardHtml } from './admin_ui.js';
+import { getWebAppHtml } from './webapp_ui.js';
+import { getOpenAppHtml } from './open_ui.js';
 
 async function safeKvPut(env, key, value, options) {
   try {
@@ -148,6 +150,27 @@ export default {
           }
         });
       }
+    }
+
+    // Telegram Mini App WebApp Menu (Serve Colored Palette WebApp)
+    if ((path === '/menu' || path === '/webapp') && (request.method === 'GET' || request.method === 'HEAD')) {
+      return new Response(request.method === 'HEAD' ? null : getWebAppHtml(), {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'public, max-age=60'
+        }
+      });
+    }
+
+    // Direct App Open & PIN Activation Link (/open?pin=12345678)
+    if ((path === '/open' || path === '/connect') && (request.method === 'GET' || request.method === 'HEAD')) {
+      const pinParam = url.searchParams.get('pin') || '';
+      return new Response(request.method === 'HEAD' ? null : getOpenAppHtml(pinParam), {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
     }
 
     // Health check (JSON)
@@ -695,6 +718,14 @@ export default {
         const expiresAt = now + (days * 86400);
         const rawUrls = String(body.upstream_sub_url || '').split(/[\r\n,]+/).map(u => u.trim()).filter(Boolean);
 
+        const trafficGB = parseFloat(body.traffic_gb || body.trafficLimitGB || 0);
+        let trafficBytes = null;
+        if (trafficGB > 0) {
+          trafficBytes = Math.round(trafficGB * 1073741824);
+        } else if (body.traffic_total_bytes) {
+          trafficBytes = parseInt(body.traffic_total_bytes, 10);
+        }
+
         let userRecord = {
           pin: pin,
           name: body.name || 'کاربر جدید',
@@ -702,6 +733,8 @@ export default {
           upstream_sub_url: rawUrls.join('\n'),
           upstream_sub_urls: rawUrls,
           panel_ids: Array.isArray(body.panel_ids) ? body.panel_ids : [],
+          traffic_total_bytes: trafficBytes,
+          traffic_remaining_bytes: trafficBytes,
           device_id: null,
           devices: [],
           max_devices: (body.max_devices !== undefined && body.max_devices !== null && body.max_devices !== '')
@@ -723,15 +756,15 @@ export default {
             const subRes = await PanelAdapter.fetchSubscription(userRecord);
             if (subRes && subRes.userInfo) {
               const info = subRes.userInfo;
-              if (info.total === 0) {
+              if (info.total === 0 && !trafficBytes) {
                 userRecord.traffic_remaining_bytes = -1;
                 userRecord.traffic_total_bytes = 0;
-              } else if (info.total > 0) {
+              } else if (info.total > 0 && !trafficBytes) {
                 const used = (info.upload || 0) + (info.download || 0);
                 userRecord.traffic_remaining_bytes = Math.max(0, info.total - used);
                 userRecord.traffic_total_bytes = info.total;
               }
-              if (info.expire === 0) {
+              if (info.expire === 0 && !body.days) {
                 userRecord.expires_at = null;
               } else if (info.expire > 1000000000 && !body.days) {
                 userRecord.expires_at = info.expire;
@@ -875,7 +908,8 @@ export default {
       if (path === '/api/v1/admin/extend' && request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
         const pin = String(body.pin || '').trim();
-        const days = parseInt(body.days || '30', 10);
+        const days = parseInt(body.days || '0', 10);
+        const addTrafficGB = parseFloat(body.traffic_gb || body.add_traffic_gb || 0);
 
         const raw = await env.VPN_USERS.get(pin);
         if (!raw) {
@@ -884,17 +918,63 @@ export default {
 
         const user = JSON.parse(raw);
         const now = Math.floor(Date.now() / 1000);
-        const base = Math.max(now, user.expires_at || now);
-        user.expires_at = base + (days * 86400);
+        if (days > 0) {
+          const base = Math.max(now, user.expires_at || now);
+          user.expires_at = base + (days * 86400);
+        }
+        if (addTrafficGB > 0) {
+          const addBytes = Math.round(addTrafficGB * 1073741824);
+          user.traffic_total_bytes = (user.traffic_total_bytes || 0) + addBytes;
+          if (user.traffic_remaining_bytes !== undefined && user.traffic_remaining_bytes !== null && user.traffic_remaining_bytes !== -1) {
+            user.traffic_remaining_bytes = Math.max(0, user.traffic_remaining_bytes + addBytes);
+          } else {
+            user.traffic_remaining_bytes = user.traffic_total_bytes;
+          }
+        }
         user.active = true;
+
+        // Push updates to remote panels!
+        if (user.remote_panel_mappings && typeof user.remote_panel_mappings === 'object') {
+          try {
+            const panels = await PanelManager.getPanels(env);
+            for (const [panelId, mappingInfo] of Object.entries(user.remote_panel_mappings)) {
+              const panel = panels.find(p => p.id === panelId);
+              if (panel) {
+                await PanelManager.updateRemoteUser(panel, mappingInfo, {
+                  active: true,
+                  expires_at: user.expires_at,
+                  traffic_total_bytes: user.traffic_total_bytes
+                });
+              }
+            }
+          } catch (panelUpdateErr) {
+            console.warn(`Error updating remote panels during extend:`, panelUpdateErr.message);
+          }
+        }
 
         await env.VPN_USERS.put(pin, JSON.stringify(user));
 
         return new Response(JSON.stringify({
           status: 'success',
           pin: pin,
-          new_expires_at: user.expires_at
+          new_expires_at: user.expires_at,
+          traffic_total_bytes: user.traffic_total_bytes,
+          traffic_remaining_bytes: user.traffic_remaining_bytes
         }), { headers: corsHeaders });
+      }
+
+      // GET /api/v1/admin/user
+      if (path === '/api/v1/admin/user' && request.method === 'GET') {
+        const pin = String(url.searchParams.get('pin') || '').trim();
+        if (!pin) {
+          return new Response(JSON.stringify({ error: 'PIN parameter required' }), { status: 400, headers: corsHeaders });
+        }
+        const raw = await env.VPN_USERS.get(pin);
+        if (!raw) {
+          return new Response(JSON.stringify({ error: 'User PIN not found' }), { status: 404, headers: corsHeaders });
+        }
+        const user = JSON.parse(raw);
+        return new Response(JSON.stringify({ status: 'success', user }), { headers: corsHeaders });
       }
 
       // POST /api/v1/admin/delete
