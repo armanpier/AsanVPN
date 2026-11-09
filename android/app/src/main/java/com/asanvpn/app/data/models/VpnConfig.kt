@@ -51,7 +51,10 @@ data class VpnNode(
     @SerializedName("serviceName") val serviceName: String? = null,
     @SerializedName("alpn") val alpn: List<String>? = null,
     @SerializedName("cipher") val cipher: String? = null,
-    @SerializedName("latency") var latencyMs: Long = -1L
+    @SerializedName("latency") var latencyMs: Long = -1L,
+    @SerializedName("panel_id") val panelId: String? = null,
+    @SerializedName("panel_name") val panelName: String? = null,
+    @SerializedName("panel_priority") val panelPriority: Int? = 1
 )
 
 enum class ConnectionState {

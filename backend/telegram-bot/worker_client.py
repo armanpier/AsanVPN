@@ -15,17 +15,42 @@ class WorkerClient:
         }
 
     async def get_panels(self) -> list:
-        """Fetch list of all configured upstream proxy panels"""
+        """Fetch list of all configured upstream proxy panels sorted by priority"""
         url = f"{self.base_url}/api/v1/admin/panels"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:
                     data = res.json()
-                    return data.get("panels", [])
+                    panels = data.get("panels", [])
+                    panels.sort(key=lambda p: (p.get("priority") or 99))
+                    return panels
         except Exception as e:
             logger.error(f"Error fetching panels: {e}")
         return []
+
+    async def save_panel(self, panel_data: dict) -> dict:
+        """Add, update, or change priority of a panel"""
+        url = f"{self.base_url}/api/v1/admin/panels/save"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, json=panel_data, headers=self.headers)
+                if res.status_code in (200, 201):
+                    return res.json().get("panel", {})
+        except Exception as e:
+            logger.error(f"Error saving panel: {e}")
+        return None
+
+    async def test_panel(self, panel_data: dict) -> dict:
+        """Test live latency and connectivity to a proxy panel"""
+        url = f"{self.base_url}/api/v1/admin/panels/test"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, json=panel_data, headers=self.headers)
+                return res.json()
+        except Exception as e:
+            logger.error(f"Error testing panel: {e}")
+            return {"ok": False, "error": str(e)}
 
     async def create_user(self, name: str, days: int = 30, traffic_gb: float = 0, max_devices: int = 1, panel_ids: list = None) -> dict:
         """

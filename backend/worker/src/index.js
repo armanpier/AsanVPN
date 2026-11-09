@@ -391,7 +391,7 @@ export default {
         // Fetch upstream subscription content with KV cache resilience
         let nodes = null;
         try {
-          const subResult = await PanelAdapter.fetchSubscription(user);
+          const subResult = await PanelAdapter.fetchSubscription(user, env);
           const subText = typeof subResult === 'string' ? subResult : (subResult?.text || '');
           
           // Real-time update of traffic & expiration from upstream subscription-userinfo header
@@ -435,8 +435,15 @@ export default {
             }
           }
 
-          nodes = parseSubscriptionText(subText);
+          if (subResult && Array.isArray(subResult.nodes) && subResult.nodes.length > 0) {
+            nodes = subResult.nodes;
+          } else {
+            nodes = parseSubscriptionText(subText);
+          }
+
           if (nodes && nodes.length > 0) {
+            // Guarantee nodes are sorted by panel priority ascending
+            nodes.sort((a, b) => (a.panel_priority || 99) - (b.panel_priority || 99));
             const oldNodesStr = JSON.stringify(user.cached_nodes || []);
             const newNodesStr = JSON.stringify(nodes);
             if (oldNodesStr !== newNodesStr) {
@@ -465,7 +472,8 @@ export default {
                 pbk: "1A8VfHw1l9sN0pX8zK3mQ7rT2vY4bC6xZ9jL5wP8dE",
                 sid: "6a",
                 spx: "/",
-                flow: "xtls-rprx-vision"
+                flow: "xtls-rprx-vision",
+                panel_priority: 1
               },
               {
                 protocol: "vless",
@@ -479,7 +487,8 @@ export default {
                 pbk: "1A8VfHw1l9sN0pX8zK3mQ7rT2vY4bC6xZ9jL5wP8dE",
                 sid: "6a",
                 spx: "/",
-                flow: "xtls-rprx-vision"
+                flow: "xtls-rprx-vision",
+                panel_priority: 1
               }
             ];
           }
@@ -503,10 +512,21 @@ export default {
                 pbk: "1A8VfHw1l9sN0pX8zK3mQ7rT2vY4bC6xZ9jL5wP8dE",
                 sid: "6a",
                 spx: "/",
-                flow: "xtls-rprx-vision"
+                flow: "xtls-rprx-vision",
+                panel_priority: 1
               }
             ];
           }
+        }
+
+        // Guarantee all nodes have integer panel_priority and are sorted strictly by priority
+        if (Array.isArray(nodes)) {
+          nodes.forEach(n => {
+            if (typeof n.panel_priority !== 'number' || isNaN(n.panel_priority) || n.panel_priority < 1) {
+              n.panel_priority = 1;
+            }
+          });
+          nodes.sort((a, b) => (a.panel_priority || 99) - (b.panel_priority || 99));
         }
 
         // Generate configurations for both Xray and Sing-box
@@ -691,7 +711,7 @@ export default {
         // Live calculation of traffic & expiry from panels
         if (Array.isArray(user.upstream_sub_urls) && user.upstream_sub_urls.length > 0) {
           try {
-            const subRes = await PanelAdapter.fetchSubscription(user);
+            const subRes = await PanelAdapter.fetchSubscription(user, env);
             if (subRes && subRes.userInfo) {
               const info = subRes.userInfo;
               if (info.total === 0) {
@@ -787,7 +807,7 @@ export default {
         // Live calculation of traffic & expiry from panels
         if (Array.isArray(userRecord.upstream_sub_urls) && userRecord.upstream_sub_urls.length > 0) {
           try {
-            const subRes = await PanelAdapter.fetchSubscription(userRecord);
+            const subRes = await PanelAdapter.fetchSubscription(userRecord, env);
             if (subRes && subRes.userInfo) {
               const info = subRes.userInfo;
               if (info.total === 0 && !trafficBytes) {

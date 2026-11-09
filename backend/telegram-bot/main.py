@@ -840,15 +840,16 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineKeyboardButton("📊 گزارشات مالی کامل", callback_data="admin_stats_full")
         ],
         [
-            InlineKeyboardButton("🗑 حذف و ابطال اشتراک کاربر", callback_data="admin_remove_sub"),
-            InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast")
+            InlineKeyboardButton("🌐 اولویت‌بندی و وضعیت پنل‌ها", callback_data="admin_panels_menu"),
+            InlineKeyboardButton("🗑 حذف و ابطال اشتراک کاربر", callback_data="admin_remove_sub")
+        ],
+        [
+            InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast"),
+            InlineKeyboardButton("💾 تنظیمات و مدیریت بکاپ", callback_data="admin_backup_menu")
         ],
         [
             InlineKeyboardButton("📝 تنظیمات متون", callback_data="admin_texts"),
             InlineKeyboardButton("🔔 تنظیمات اعلانات", callback_data="admin_notifications")
-        ],
-        [
-            InlineKeyboardButton("💾 تنظیمات و مدیریت بکاپ", callback_data="admin_backup_menu")
         ],
         [
             InlineKeyboardButton("🔙 بازگشت به منوی کاربری", callback_data="admin_exit")
@@ -860,6 +861,135 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
     elif update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+# ----------------- ADMIN PANEL PRIORITY & HEALTH -----------------
+
+async def admin_panels_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    panels = await worker.get_panels()
+    if not panels:
+        text = "❌ <b>ارتباط با ورکر برقرار نشد یا هیچ پنلی تعریف نشده است.</b>"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_dashboard")]])
+        if query:
+            await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        else:
+            await update.effective_message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        return
+
+    # Sort ascending by priority
+    panels.sort(key=lambda p: (p.get("priority") or 99))
+
+    text = (
+        "🌐 <b>مدیریت، سلامت و اولویت‌بندی پنل‌های پروکسی</b> 🛡️⚡\n\n"
+        "<blockquote>💡 <b>سیستم آبشاری خودکار (Priority Waterfall):</b>\n"
+        "اپلیکیشن کاربر ابتدا کانفیگ‌های پنل با اولویت ۱ را با تاخیر واقعی (Real Delay) تست می‌کند و در صورت پاسخ‌گویی متصل می‌شود. "
+        "فقط در صورت قطعی کامل پنل اول، به ترتیب سراغ پنل‌های بعدی می‌رود.</blockquote>\n\n"
+        "📋 <b>لیست پنل‌ها به ترتیب اولویت اتصال:</b>\n\n"
+    )
+
+    keyboard = []
+    priority_emojis = {1: "🥇", 2: "🥈", 3: "🥉"}
+
+    for p in panels:
+        p_id = p.get("id", "")
+        p_name = p.get("name", "نامشخص")
+        p_prio = p.get("priority", 99)
+        p_type = p.get("type", "نامشخص")
+        p_enabled = p.get("enabled", True)
+
+        badge = priority_emojis.get(p_prio, f"#{p_prio}")
+        status_str = "🟢 فعال" if p_enabled else "🔴 غیرفعال"
+
+        text += (
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"{badge} <b>{p_name}</b> ({p_type})\n"
+            f"🔹 <b>اولویت اتصال:</b> {p_prio}\n"
+            f"🔹 <b>وضعیت:</b> {status_str}\n"
+            f"🔹 <b>آدرس سرور:</b> <code>{p.get('url', '')}</code>\n"
+        )
+
+        row = []
+        if p_prio > 1:
+            row.append(InlineKeyboardButton(f"⬆️ ارتقا ({p_name})", callback_data=f"prio_up:{p_id}"))
+        row.append(InlineKeyboardButton(f"⬇️ تنزل ({p_name})", callback_data=f"prio_down:{p_id}"))
+        row.append(InlineKeyboardButton(f"⚡ تست پینگ ({p_name})", callback_data=f"test_pnl:{p_id}"))
+        keyboard.append(row)
+
+    keyboard.append([
+        InlineKeyboardButton("🔄 بروزرسانی و استعلام مجدد", callback_data="admin_panels_menu"),
+        InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_dashboard")
+    ])
+
+    markup = InlineKeyboardMarkup(keyboard)
+    if query:
+        await query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+    else:
+        await update.effective_message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+async def admin_change_panel_priority(update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: str, direction: str):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    query = update.callback_query
+    panels = await worker.get_panels()
+    target = next((p for p in panels if p.get("id") == panel_id), None)
+    if not target:
+        if query:
+            await query.answer("پنل مورد نظر یافت نشد!", show_alert=True)
+        return
+
+    curr_prio = target.get("priority", 99)
+    new_prio = max(1, curr_prio - 1) if direction == "up" else curr_prio + 1
+
+    if new_prio == curr_prio:
+        if query:
+            await query.answer("اولویت تغییری نکرد.", show_alert=False)
+        return
+
+    # Check if another panel holds new_prio, swap them
+    other = next((p for p in panels if p.get("priority") == new_prio and p.get("id") != panel_id), None)
+    if other:
+        other["priority"] = curr_prio
+        await worker.save_panel(other)
+
+    target["priority"] = new_prio
+    await worker.save_panel(target)
+
+    if query:
+        await query.answer(f"✅ اولویت {target.get('name')} به {new_prio} تنظیم شد.", show_alert=False)
+    await admin_panels_menu(update, context)
+
+async def admin_test_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: str):
+    query = update.callback_query
+    if query:
+        await query.answer("⏳ در حال سنجش پینگ و تاخیر پنل...", show_alert=False)
+
+    panels = await worker.get_panels()
+    target = next((p for p in panels if p.get("id") == panel_id), None)
+    if not target:
+        if query:
+            await query.answer("پنل یافت نشد!", show_alert=True)
+        return
+
+    res = await worker.test_panel(target)
+    if res.get("ok"):
+        lat = res.get("latency_ms", "نامشخص")
+        code = res.get("status", 200)
+        msg = f"✅ اتصال به «{target.get('name')}» با موفقیت برقرار شد!\n⚡ زمان پاسخ (Ping): {lat} میلی‌ثانیه\nکد وضعیت: {code}"
+    else:
+        err = res.get("error", "عدم برقراری ارتباط")
+        msg = f"❌ خطای اتصال به «{target.get('name')}»:\n{err}"
+
+    if query:
+        await query.answer(msg, show_alert=True)
 
 # Admin: Remove / Revoke Subscription Flow
 async def admin_remove_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1294,6 +1424,25 @@ async def admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TY
 
     if data == "admin_dashboard":
         await show_admin_dashboard(update, context)
+        return
+
+    if data == "admin_panels_menu":
+        await admin_panels_menu(update, context)
+        return
+
+    if data.startswith("prio_up:"):
+        panel_id = data.split(":")[1]
+        await admin_change_panel_priority(update, context, panel_id, "up")
+        return
+
+    if data.startswith("prio_down:"):
+        panel_id = data.split(":")[1]
+        await admin_change_panel_priority(update, context, panel_id, "down")
+        return
+
+    if data.startswith("test_pnl:"):
+        panel_id = data.split(":")[1]
+        await admin_test_panel_handler(update, context, panel_id)
         return
 
     if data == "admin_remove_sub":
@@ -1766,7 +1915,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
     if query:
         await query.answer()
 
-    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
+    app_download_url = await db.get_setting("app_download_url", "https://asanvpn-worker.hi-deploy.workers.dev/download")
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
 
     # 1. Determine which PIN to show
@@ -1790,6 +1939,15 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
                     if not pin:
                         pin = p
             all_pins = await db.get_user_all_pins(user_id)
+
+    # 1.8. If admin has no personal PIN, retrieve recent admin-issued subscriptions
+    if not pin and is_admin(user_id):
+        recent_admin_pins = await db.get_recent_admin_pins(limit=5)
+        if recent_admin_pins:
+            pin = recent_admin_pins[0]
+            for p in recent_admin_pins:
+                if p not in all_pins:
+                    all_pins.append(p)
 
     # 2. If no PIN is registered for this telegram user in database or worker
     if not pin:
@@ -2088,20 +2246,21 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
 
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
-    universal_apk_url = "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk"
+    universal_apk_url = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.0/AsanVPN-v1.3.0-universal.apk"
     cdn_download_url = "https://asanvpn-worker.hi-deploy.workers.dev/download"
 
     text = (
-        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.2.0)</b>\n"
+        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.3.0)</b>\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "✨ <b>طراحی مدرن سفید سه‌بعدی و آیکون جدید</b>\n"
+        "✨ <b>طراحی مدرن سفید سه‌بعدی و آیکون رسمی جدید</b>\n"
         "📦 <b>نسخه همگانی (Universal APK) — سازگار با ۱۰۰٪ دستگاه‌ها</b>\n\n"
-        "🔹 <b>ویژگی‌ها و مزایا:</b>\n"
-        "• <b>سازگاری کامل:</b> قابل نصب روی تمام گوشی‌ها و تبلت‌های اندروید (سامسونگ، شیائومی، هواوی، پیکسل و...)\n"
-        "• <b>بدون نیاز به انتخاب پردازنده:</b> یک فایل نصبی واحد و جامع برای همه گوشی‌ها\n"
-        "• <b>اتصال فوری با پین ۸ رقمی:</b> بدون نیاز به تنظیمات پیچیده یا فایل کانفیگ\n"
+        "🔹 <b>امکانات نسخه جدید v1.3.0:</b>\n"
+        "• <b>اولویت‌بندی آبشاری پنل‌ها:</b> اتصال هوشمند به پنل‌های دارای اولویت بالاتر و سوئیچ خودکار در صورت قطعی\n"
+        "• <b>تست تاخیر واقعی (Real Delay):</b> سنجش پینگ دقیق سرورها قبل از برقراری ارتباط برای تضمین حداکثر سرعت\n"
+        "• <b>به‌روزرسانی خودکار داخلی:</b> دانلود و نصب آسان نسخه‌های جدید مستقیماً از داخل اپلیکیشن\n"
+        "• <b>بدون نیاز به انتخاب پردازنده:</b> یک فایل نصبی واحد و جامع برای همه گوشی‌ها (سامسونگ، شیائومی و...)\n"
         "• <b>پشتیبانی از دیپ‌لینک:</b> باز شدن و فعال‌سازی خودکار برنامه با یک لمس\n"
-        "• <b>هسته هوشمند ضد فیلتر:</b> پروتکل‌های پرسرعت VLESS Reality و Sing-box\n\n"
+        "• <b>هسته هوشمند ضد فیلتر:</b> پروتکل‌های نوین VLESS Reality و Sing-box\n\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
         "👇 <b>جهت دانلود و نصب، یکی از گزینه‌های زیر را انتخاب فرمایید:</b>"
     )
@@ -2379,7 +2538,7 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(renew_direct, pattern=r"^renew_pin_direct:"))
 
     # Admin callbacks
-    app.add_handler(CallbackQueryHandler(admin_callback_router, pattern=r"^(admin_|toggle_|set_backup_)"))
+    app.add_handler(CallbackQueryHandler(admin_callback_router, pattern=r"^(admin_|toggle_|set_backup_|prio_|test_pnl)"))
 
     # Plain text messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_router))

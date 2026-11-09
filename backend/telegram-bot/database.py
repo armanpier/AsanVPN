@@ -351,6 +351,21 @@ class BotDatabase:
 
             return None
 
+    async def get_recent_admin_pins(self, limit: int = 5) -> list:
+        """Fetch recently issued pins from orders for admin convenience"""
+        pins = []
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT DISTINCT assigned_pin FROM orders WHERE assigned_pin IS NOT NULL AND assigned_pin != '' AND assigned_pin != '26508350' ORDER BY id DESC LIMIT ?",
+                (limit,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                for r in rows:
+                    p = str(r[0]).strip()
+                    if p and p not in pins:
+                        pins.append(p)
+        return pins
+
     async def get_user_all_pins(self, telegram_id: int) -> list:
         """Get all distinct valid PINs assigned to this telegram user"""
         pins = []

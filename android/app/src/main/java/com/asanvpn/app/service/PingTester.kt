@@ -28,6 +28,18 @@ object PingTester {
      * while continuing in the background to evaluate all candidates to switch
      * to the fastest one without keeping the user waiting.
      */
+    /**
+     * Priority-based Waterfall / Cascade Connect & Optimize:
+     * 1. Groups candidate nodes strictly by panel priority (Priority 1 = highest, Priority 2 = next, etc.).
+     * 2. Tests the highest-priority panel (Priority 1) first using REAL HTTP 204 tunnel delay.
+     * 3. If ANY node in Priority 1 succeeds with a valid real delay (> 0):
+     *    - Connects immediately to it (fast connect).
+     *    - Optimizes within Priority 1 only.
+     *    - HALTS the cascade completely (does NOT touch lower priority panels).
+     * 4. If and ONLY if ALL nodes in Priority 1 fail/timeout (blocked/down):
+     *    - Cascades to Priority 2, runs real delay testing on Priority 2 nodes.
+     * 5. Repeats down the cascade for Priority 3, etc.
+     */
     suspend fun connectFastAndOptimize(
         context: Context? = null,
         nodes: List<VpnNode>,
@@ -46,153 +58,134 @@ object PingTester {
         val usableNodes = nodes.filter { isUsableEgressNode(it) }
         val candidatePool = if (usableNodes.isNotEmpty()) usableNodes else nodes
 
-        // Step 1: Rapid parallel TCP prescan (500ms timeout) to rank by proximity
-        val tcpResults = candidatePool.map { node ->
-            async {
-                val tcpLatency = testTcpLatency(node.server, node.port, 500)
-                Pair(node, tcpLatency)
-            }
-        }.awaitAll()
+        // Group candidate nodes strictly by panel priority (1 = highest, 2, 3...)
+        val priorityTiers = candidatePool
+            .groupBy { it.panelPriority ?: 1 }
+            .toSortedMap()
 
-        val responsiveCandidates = tcpResults
-            .filter { it.second > 0 }
-            .sortedBy { it.second }
-            .map { it.first }
-
-        val poolToTest = if (responsiveCandidates.isNotEmpty()) responsiveCandidates else candidatePool
-
-        // Step 2: Concurrent real HTTP 204 delay test
         val firstConnected = AtomicBoolean(false)
         val bestLatency = java.util.concurrent.atomic.AtomicLong(Long.MAX_VALUE)
         var bestNode: VpnNode? = null
-        val candidatesToTest = poolToTest.take(15)
 
-        coroutineScope {
-            candidatesToTest.forEach { node ->
-                launch {
-                    val realDelay = measureRealDelay(node)
-                    node.latencyMs = realDelay
-                    if (realDelay in 1 until bestLatency.get()) {
-                        Log.i(TAG, "Candidate verified: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms")
+        // WATERFALL CASCADE LOOP:
+        // Always test Priority 1 first. Only cascade to Priority 2/3 if Priority 1 completely fails.
+        for ((tier, tierNodes) in priorityTiers) {
+            val tierName = tierNodes.firstOrNull()?.panelName ?: "پنل اولویت $tier"
+            Log.i(TAG, "==> [Priority Cascade] Testing Priority Tier $tier ($tierName) with ${tierNodes.size} candidate nodes...")
 
-                        // Case 1: First working node found -> Connect immediately!
-                        if (firstConnected.compareAndSet(false, true)) {
-                            bestNode = node
-                            bestLatency.set(realDelay)
-                            Log.i(TAG, ">> FAST CONNECT: Connecting immediately to first OK link [${node.remark}] (${realDelay}ms)")
-                            onFirstOkNode(node)
+            // Rapid parallel TCP prescan (500ms timeout) for this tier to filter completely dead endpoints
+            val tcpResults = tierNodes.map { node ->
+                async {
+                    val tcp = testTcpLatency(node.server, node.port, 500)
+                    Pair(node, tcp)
+                }
+            }.awaitAll()
+
+            val responsive = tcpResults.filter { it.second > 0 }.sortedBy { it.second }.map { it.first }
+            val tierCandidatesToTest = if (responsive.isNotEmpty()) responsive.take(10) else tierNodes.take(10)
+
+            // Test Real Delay via Libv2ray HTTP 204 on this tier's candidates
+            coroutineScope {
+                tierCandidatesToTest.forEach { node ->
+                    launch {
+                        val realDelay = measureRealDelay(node, 2200L)
+                        node.latencyMs = realDelay
+                        if (realDelay in 1 until bestLatency.get()) {
+                            Log.i(TAG, "Tier $tier Verified OK: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms")
+
+                            if (firstConnected.compareAndSet(false, true)) {
+                                bestNode = node
+                                bestLatency.set(realDelay)
+                                Log.i(TAG, ">> [Cascade SUCCESS] Connecting immediately to Priority Tier $tier server [${node.remark}] (${realDelay}ms)")
+                                onFirstOkNode(node)
+                            } else if (realDelay < bestLatency.get() - 25L) {
+                                val prevRemark = bestNode?.remark ?: "unknown"
+                                val prevLat = bestLatency.get()
+                                bestNode = node
+                                bestLatency.set(realDelay)
+                                Log.i(TAG, ">> [Cascade OPTIMIZE] Faster server found in Priority Tier $tier [${node.remark}] (${realDelay}ms vs $prevRemark ${prevLat}ms) -> Switching")
+                                onFastestNodeFound(node)
+                            }
+                        } else {
+                            Log.d(TAG, "Tier $tier candidate failed: [${node.remark}]")
                         }
-                        // Case 2: Subsequent verified node is significantly faster (> 25ms improvement) -> Switch immediately!
-                        else if (realDelay < bestLatency.get() - 25L) {
-                            val prevRemark = bestNode?.remark ?: "unknown"
-                            val prevLat = bestLatency.get()
-                            bestNode = node
-                            bestLatency.set(realDelay)
-                            Log.i(TAG, ">> OPTIMIZING SWITCH: Faster node found [${node.remark}] (${realDelay}ms vs $prevRemark ${prevLat}ms) -> Switching now!")
-                            onFastestNodeFound(node)
-                        }
-                    } else if (realDelay <= 0) {
-                        Log.d(TAG, "Candidate failed: [${node.remark}]")
                     }
                 }
             }
+
+            // If ANY node in this priority tier succeeded, stop the cascade!
+            if (firstConnected.get()) {
+                Log.i(TAG, ">> [Cascade HALTED] Connected to working server in Priority Tier $tier ($tierName). Cascade complete.")
+                return@withContext
+            }
+
+            Log.w(TAG, ">> [Cascade FAILOVER] All candidate nodes in Priority Tier $tier failed real delay test! Cascading to next priority tier...")
         }
 
-        // If no candidate passed real delay test, fallback to best TCP or first node
+        // If ALL priority tiers failed real delay test, fallback to first candidate of highest priority tier
         if (firstConnected.compareAndSet(false, true)) {
-            val fallback = responsiveCandidates.firstOrNull() ?: candidatePool[0]
-            Log.w(TAG, "No candidate passed real delay, falling back to [${fallback.remark}]")
+            val fallback = candidatePool[0]
+            Log.w(TAG, ">> [Cascade EXHAUSTED] No node in any tier passed real delay; using emergency fallback [${fallback.remark}]")
             onFirstOkNode(fallback)
         }
     }
 
     /**
      * Finds the fastest, verified working proxy using REALTIME HTTP roundtrip latency
-     * through the V2Ray/Xray tunnel rather than a simple TCP handshake.
-     *
-     * 1. Pre-filters out domestic bridges, plaintext relays, and fake CDN IPs.
-     * 2. Runs a fast parallel TCP pre-scan to identify responsive candidate hosts.
-     * 3. Tests real end-to-end HTTP/204 tunnel latency on top candidates via Libv2ray.measureOutboundDelay.
-     * 4. Selects the proxy with the absolute lowest REAL latency that actually routes internet traffic.
+     * through the V2Ray/Xray tunnel rather than a simple TCP handshake, adhering strictly
+     * to panel waterfall priority.
      */
     suspend fun findFastestNode(context: Context? = null, nodes: List<VpnNode>): VpnNode = withContext(Dispatchers.IO) {
         if (nodes.isEmpty()) throw IllegalArgumentException("Node list is empty")
         if (nodes.size == 1) return@withContext nodes[0]
 
-        // 1. Initialize V2Ray Core environment if context is provided
         context?.let { V2RayCoreManager.initCore(it) }
 
-        // 2. Separate genuine foreign egress nodes from domestic bridges/CDN
         val usableNodes = nodes.filter { isUsableEgressNode(it) }
         val candidatePool = if (usableNodes.isNotEmpty()) usableNodes else nodes
 
-        // 3. Fast Parallel TCP Pre-scan to rank candidates by local network responsiveness
-        val tcpResults = candidatePool.map { node ->
-            async {
-                val tcpLatency = testTcpLatency(node.server, node.port, 650)
-                Pair(node, tcpLatency)
-            }
-        }.awaitAll()
+        val priorityTiers = candidatePool
+            .groupBy { it.panelPriority ?: 1 }
+            .toSortedMap()
 
-        val responsiveCandidates = tcpResults
-            .filter { it.second > 0 }
-            .sortedBy { it.second }
-            .map { it.first }
-
-        val poolToTest = if (responsiveCandidates.isNotEmpty()) responsiveCandidates else candidatePool
-
-        // 4. Test REALTIME tunnel latency on top candidates (up to 12 nodes) with 6 concurrent workers
-        val topCandidates = poolToTest.take(12)
         val semaphore = Semaphore(6)
 
-        val realResults = topCandidates.map { node ->
-            async {
-                semaphore.withPermit {
-                    val realDelay = measureRealDelay(node, 1900L)
-                    node.latencyMs = realDelay
-                    if (realDelay > 0) {
-                        Log.i(TAG, "Proxy verified working: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms")
-                    } else {
-                        Log.d(TAG, "Proxy test failed: [${node.remark}] (${node.server}:${node.port})")
-                    }
-                    Pair(node, realDelay)
+        // Waterfall cascade: test each priority tier in order
+        for ((tier, tierNodes) in priorityTiers) {
+            val tierName = tierNodes.firstOrNull()?.panelName ?: "اولویت $tier"
+            Log.i(TAG, "findFastestNode: Checking Priority Tier $tier ($tierName, ${tierNodes.size} nodes)")
+
+            val tcpResults = tierNodes.map { node ->
+                async {
+                    val tcp = testTcpLatency(node.server, node.port, 500)
+                    Pair(node, tcp)
                 }
-            }
-        }.awaitAll()
+            }.awaitAll()
 
-        // 5. Select the verified working node with the lowest REAL latency
-        val workingReal = realResults
-            .filter { it.second > 0 }
-            .minByOrNull { it.second }
+            val responsive = tcpResults.filter { it.second > 0 }.sortedBy { it.second }.map { it.first }
+            val poolToTest = if (responsive.isNotEmpty()) responsive.take(8) else tierNodes.take(8)
 
-        if (workingReal != null) {
-            Log.i(TAG, "Selected fastest VERIFIED proxy: [${workingReal.first.remark}] with REAL delay ${workingReal.second}ms")
-            return@withContext workingReal.first
-        }
-
-        // Batch 2 check if first 12 had dead/expired servers
-        if (poolToTest.size > 12) {
-            val batch2 = poolToTest.drop(12).take(8)
-            val batch2Results = batch2.map { node ->
+            val realResults = poolToTest.map { node ->
                 async {
                     semaphore.withPermit {
-                        val realDelay = measureRealDelay(node, 1900L)
+                        val realDelay = measureRealDelay(node, 2000L)
                         node.latencyMs = realDelay
                         Pair(node, realDelay)
                     }
                 }
             }.awaitAll()
 
-            val workingBatch2 = batch2Results.filter { it.second > 0 }.minByOrNull { it.second }
-            if (workingBatch2 != null) {
-                Log.i(TAG, "Selected verified proxy from batch 2: [${workingBatch2.first.remark}] with REAL delay ${workingBatch2.second}ms")
-                return@withContext workingBatch2.first
+            val workingNode = realResults.filter { it.second > 0 }.minByOrNull { it.second }
+            if (workingNode != null) {
+                Log.i(TAG, "findFastestNode: Selected fastest verified proxy in Priority Tier $tier: [${workingNode.first.remark}] with REAL delay ${workingNode.second}ms")
+                return@withContext workingNode.first
             }
+
+            Log.w(TAG, "findFastestNode: All nodes in Priority Tier $tier failed real delay test. Cascading to next tier...")
         }
 
-        // Resilient fallback (e.g. device is offline during setup)
-        val fallback = responsiveCandidates.firstOrNull() ?: candidatePool[0]
-        Log.w(TAG, "No proxy passed real delay test; using fallback [${fallback.remark}]")
+        val fallback = candidatePool[0]
+        Log.w(TAG, "findFastestNode: No proxy passed real delay test across all tiers; using fallback [${fallback.remark}]")
         return@withContext fallback
     }
 

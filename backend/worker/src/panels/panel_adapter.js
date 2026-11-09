@@ -2,7 +2,8 @@ import { XUIAdapter } from './xui.js';
 import { MarzbanAdapter } from './marzban.js';
 import { PasarGuardAdapter } from './pasarguard.js';
 import { HiddifyAdapter } from './hiddify.js';
-import { fetchViaSocket } from './panel_manager.js';
+import { fetchViaSocket, PanelManager, DEFAULT_INITIAL_PANELS } from './panel_manager.js';
+import { parseSubscriptionText } from '../parsers/sub_parser.js';
 
 export class PanelAdapter {
   static extractUrls(userRecord) {
@@ -32,14 +33,19 @@ export class PanelAdapter {
       throw new Error(`Invalid URL: ${url}`);
     }
 
-    const isDirectIpWithCfPort = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname) &&
-      ['2052', '2053', '2082', '2083', '2086', '2087', '2095', '2096', '8080', '8443', '8880'].includes(parsed.port);
+    const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    const isDirectIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname);
+    const isCustomPort = (port !== '80' && port !== '443');
 
-    if (isDirectIpWithCfPort) {
+    // If custom port (e.g. 9090, 2096, 14393) or direct IP, try fetchViaSocket first
+    if (isDirectIp || isCustomPort) {
       try {
-        return await fetchViaSocket(url);
+        const sockText = await fetchViaSocket(url);
+        if (sockText && (sockText.includes('://') || sockText.length > 20)) {
+          return { text: sockText, userInfo: null };
+        }
       } catch (socketErr) {
-        throw new Error(`fetchViaSocket failed: ${socketErr.message || String(socketErr)}`);
+        console.warn(`Initial fetchViaSocket for ${url} failed:`, socketErr.message);
       }
     }
 
@@ -60,16 +66,14 @@ export class PanelAdapter {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        const errBody = await response.text().catch(() => '');
-        if (errBody.includes('1003') || response.status === 403) {
-          try {
-            const sockText = await fetchViaSocket(url);
-            return { text: sockText, userInfo: null };
-          } catch (sockErr) {
-            throw new Error(`Upstream panel (${panelType}) returned HTTP ${response.status}: ${errBody.slice(0, 150)}`);
-          }
+        // Fallback to socket fetch on ANY non-2xx status (525, 403, 502, 1003, etc.)
+        try {
+          const sockText = await fetchViaSocket(url);
+          return { text: sockText, userInfo: null };
+        } catch (sockErr) {
+          const errBody = await response.text().catch(() => '');
+          throw new Error(`Upstream panel (${panelType}) returned HTTP ${response.status}: ${errBody.slice(0, 150)}`);
         }
-        throw new Error(`Upstream panel (${panelType}) returned HTTP ${response.status}: ${errBody.slice(0, 150)}`);
       }
 
       const userinfoHeader = response.headers.get('subscription-userinfo');
@@ -98,35 +102,117 @@ export class PanelAdapter {
     }
   }
 
-  static async fetchSubscription(userRecord) {
-    const urls = this.extractUrls(userRecord);
-    if (urls.length === 0) {
-      throw new Error('User record has no upstream_sub_url');
+  static async fetchSubscription(userRecord, env = null) {
+    let panels = [];
+    if (env) {
+      try {
+        panels = await PanelManager.getPanels(env);
+      } catch (_) {
+        panels = DEFAULT_INITIAL_PANELS;
+      }
+    } else {
+      panels = DEFAULT_INITIAL_PANELS;
     }
 
-    if (urls.length === 1) {
-      return await this.fetchSingleSubscription(urls[0], userRecord.panel_type);
-    }
+    // Build targets list with priority
+    const targets = [];
+    const seenUrls = new Set();
 
-    // Multiple URLs: fetch concurrently
-    const results = await Promise.allSettled(
-      urls.map(u => this.fetchSingleSubscription(u, userRecord.panel_type))
-    );
-
-    const successful = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value) {
-        successful.push(r.value);
+    // 1. If user has remote_panel_mappings, map them to configured panels
+    if (userRecord.remote_panel_mappings && typeof userRecord.remote_panel_mappings === 'object') {
+      for (const [panelId, mapping] of Object.entries(userRecord.remote_panel_mappings)) {
+        if (mapping && mapping.subUrl && typeof mapping.subUrl === 'string') {
+          const cleanUrl = mapping.subUrl.trim();
+          if (cleanUrl.startsWith('http') && !seenUrls.has(cleanUrl)) {
+            seenUrls.add(cleanUrl);
+            const panel = panels.find(p => p.id === panelId);
+            targets.push({
+              url: cleanUrl,
+              panelId: panelId,
+              panelName: panel ? panel.name : (mapping.username ? `سرور (${mapping.username})` : 'سرور پروکسی'),
+              priority: panel ? (panel.priority || 1) : 1,
+              panelType: mapping.panelType || (panel ? panel.type : (userRecord.panel_type || 'raw'))
+            });
+          }
+        }
       }
     }
 
-    if (successful.length === 0) {
+    // 2. Also check any additional URLs in upstream_sub_urls or upstream_sub_url
+    const rawUrls = this.extractUrls(userRecord);
+    for (const u of rawUrls) {
+      if (!seenUrls.has(u)) {
+        seenUrls.add(u);
+        // Try matching URL hostname to a configured panel
+        const matched = panels.find(p => {
+          try {
+            const pHost = new URL(p.url).hostname;
+            const uHost = new URL(u).hostname;
+            if (pHost === uHost) return true;
+            if (p.subBaseUrl && new URL(p.subBaseUrl).hostname === uHost) return true;
+          } catch (_) {}
+          return false;
+        });
+
+        targets.push({
+          url: u,
+          panelId: matched ? matched.id : `panel_raw_${targets.length + 1}`,
+          panelName: matched ? matched.name : `سرور اختصاصی ${targets.length + 1}`,
+          priority: matched ? (matched.priority || (targets.length + 1)) : (targets.length + 1),
+          panelType: matched ? matched.type : (userRecord.panel_type || 'raw')
+        });
+      }
+    }
+
+    if (targets.length === 0) {
+      throw new Error('User record has no upstream_sub_url');
+    }
+
+    // Sort targets by priority ascending (1 = highest priority)
+    targets.sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+    // Fetch all targets concurrently
+    const results = await Promise.allSettled(
+      targets.map(t => this.fetchSingleSubscription(t.url, t.panelType))
+    );
+
+    const successful = [];
+    const allParsedNodes = [];
+    const combinedTexts = [];
+
+    results.forEach((r, idx) => {
+      const target = targets[idx];
+      if (r.status === 'fulfilled' && r.value) {
+        const val = r.value;
+        successful.push(val);
+
+        const text = typeof val === 'string' ? val : (val.text || '');
+        if (text) {
+          combinedTexts.push(text);
+          const nodes = parseSubscriptionText(text);
+          if (Array.isArray(nodes) && nodes.length > 0) {
+            nodes.forEach(node => {
+              node.panel_id = target.panelId;
+              node.panel_name = target.panelName;
+              node.panel_priority = target.priority;
+              allParsedNodes.push(node);
+            });
+          }
+        }
+      } else {
+        console.warn(`Upstream panel fetch failed for ${target.panelName} (${target.url}):`, r.reason?.message || r.reason);
+      }
+    });
+
+    if (successful.length === 0 && allParsedNodes.length === 0) {
       const firstRejected = results.find(r => r.status === 'rejected');
       throw (firstRejected ? firstRejected.reason : new Error('Failed to fetch from all upstream panels'));
     }
 
-    const combinedTexts = successful.map(s => typeof s === 'string' ? s : (s.text || '')).filter(Boolean);
+    // Sort all parsed nodes by panel priority ascending
+    allParsedNodes.sort((a, b) => (a.panel_priority || 99) - (b.panel_priority || 99));
 
+    // Calculate mergedUserInfo
     let mergedUserInfo = null;
     for (const s of successful) {
       if (s.userInfo) {
@@ -182,7 +268,8 @@ export class PanelAdapter {
     return {
       text: combinedTexts.join('\n'),
       allTexts: combinedTexts,
-      userInfo: mergedUserInfo
+      userInfo: mergedUserInfo,
+      nodes: allParsedNodes
     };
   }
 }

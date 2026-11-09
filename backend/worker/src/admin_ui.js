@@ -292,8 +292,8 @@ export function getAdminDashboardHtml() {
       <input type="hidden" id="panel-form-id">
 
       <div class="space-y-4 text-sm">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="sm:col-span-1">
             <label class="block text-xs text-slate-300 mb-1">نام پنل (جهت شناسایی)</label>
             <input type="text" id="panel-form-name" placeholder="مثال: سرور آلمان ۳X-UI" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none">
           </div>
@@ -307,6 +307,10 @@ export function getAdminDashboardHtml() {
               <option value="hiddify">هیدیفای (Hiddify)</option>
               <option value="container">کانتینر لینک‌های Xray (مخزن گیت‌هاب / ساب مستقیم / خام)</option>
             </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">اولویت اتصال (۱ = بالاترین)</label>
+            <input type="number" id="panel-form-priority" min="1" max="99" value="1" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-slate-200">
           </div>
         </div>
 
@@ -1342,9 +1346,15 @@ export function getAdminDashboardHtml() {
                   '<span class="w-2.5 h-2.5 rounded-full ' + (isOnline ? 'bg-emerald-500 animate-pulse' : (p.lastSync ? 'bg-rose-500' : 'bg-slate-500')) + '"></span>' +
                   '<h4 class="font-bold text-base text-white">' + p.name + '</h4>' +
                 '</div>' +
-                '<span class="inline-block mt-1 text-[11px] font-mono px-2 py-0.5 rounded-full border uppercase ' + typeBadgeColor + '">' +
-                  (isContainer ? 'کانتینر لینک‌های Xray' : p.type) +
-                '</span>' +
+                '<div class="flex items-center gap-1.5 mt-1.5 flex-wrap">' +
+                  '<span class="text-[11px] font-mono px-2 py-0.5 rounded-full border uppercase ' + typeBadgeColor + '">' +
+                    (isContainer ? 'کانتینر لینک‌های Xray' : p.type) +
+                  '</span>' +
+                  '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-300 border-amber-500/30 flex items-center gap-1" title="اولویت اتصال آبشاری">' +
+                    '<i class="fa-solid fa-arrow-down-1-9 text-[10px]"></i>' +
+                    '<span>اولویت:</span> <span class="font-mono">' + (p.priority || 1) + '</span>' +
+                  '</span>' +
+                '</div>' +
               '</div>' +
               '<div class="flex items-center gap-1.5">' +
                 '<button data-id="' + p.id + '" onclick="testPanelCard(this.dataset.id)" title="تست اتصال زنده" class="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition">' +
@@ -1454,6 +1464,7 @@ export function getAdminDashboardHtml() {
       document.getElementById('panel-form-url').value = '';
       document.getElementById('panel-form-api-key').value = '';
       document.getElementById('panel-form-sub-base').value = '';
+      document.getElementById('panel-form-priority').value = (cachedPanels.length + 1);
       document.getElementById('panel-form-auto-sync').checked = true;
       onPanelTypeChange();
       document.getElementById('panel-modal').classList.remove('hidden');
@@ -1470,6 +1481,7 @@ export function getAdminDashboardHtml() {
       document.getElementById('panel-form-url').value = panel.url || '';
       document.getElementById('panel-form-api-key').value = panel.apiKey || '';
       document.getElementById('panel-form-sub-base').value = panel.subBaseUrl || '';
+      document.getElementById('panel-form-priority').value = panel.priority || 1;
       document.getElementById('panel-form-auto-sync').checked = panel.autoSync !== false;
       onPanelTypeChange();
       document.getElementById('panel-modal').classList.remove('hidden');
@@ -1557,6 +1569,7 @@ export function getAdminDashboardHtml() {
       const url = document.getElementById('panel-form-url').value.trim();
       const apiKey = document.getElementById('panel-form-api-key').value.trim();
       const subBaseUrl = document.getElementById('panel-form-sub-base').value.trim();
+      const priority = parseInt(document.getElementById('panel-form-priority').value, 10) || 1;
       const autoSync = document.getElementById('panel-form-auto-sync').checked;
 
       if (!name || !url) {
@@ -1568,7 +1581,7 @@ export function getAdminDashboardHtml() {
         const { ok, data } = await fetchJson('/api/v1/admin/panels/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Admin-Token': currentToken },
-          body: JSON.stringify({ id: id || undefined, name, type, url, apiKey, subBaseUrl, autoSync })
+          body: JSON.stringify({ id: id || undefined, name, type, url, apiKey, subBaseUrl, priority, autoSync })
         });
         if (ok) {
           closeModal('panel-modal');

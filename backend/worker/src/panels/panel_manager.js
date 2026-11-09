@@ -11,9 +11,11 @@ export async function fetchViaSocket(urlStr, options = {}) {
   const port = parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
   const isTls = parsed.protocol === 'https:';
 
+  const hostHeader = (port === 80 || port === 443) ? hostname : `${hostname}:${port}`;
+
   const socket = connect(
     { hostname, port },
-    { secureTransport: isTls ? 'on' : 'off', allowHalfOpen: false }
+    { secureTransport: isTls ? 'on' : 'off', allowHalfOpen: true }
   );
 
   const writer = socket.writable.getWriter();
@@ -22,9 +24,9 @@ export async function fetchViaSocket(urlStr, options = {}) {
   const headers = options.headers || {};
 
   let requestText = `${method} ${path} HTTP/1.1\r\n`;
-  requestText += `Host: ${hostname}:${port}\r\n`;
-  requestText += `User-Agent: AsanVPN-Manager/2.0\r\n`;
-  requestText += `Accept: application/json, text/plain, */*\r\n`;
+  requestText += `Host: ${hostHeader}\r\n`;
+  requestText += `User-Agent: v2rayNG/1.8.12\r\n`;
+  requestText += `Accept: text/plain, application/json, */*\r\n`;
   requestText += `Connection: close\r\n`;
 
   for (const [key, val] of Object.entries(headers)) {
@@ -127,6 +129,7 @@ export const DEFAULT_INITIAL_PANELS = [
     url: 'https://irtun.darklink.ir:8000',
     apiKey: 'pg_key_f85f5abb-13cc-4dc5-b3fc-8a77c2026e94',
     subBaseUrl: 'https://irsub.trafficfast.ir:9090',
+    priority: 1,
     autoSync: true,
     lastSync: null,
     lastSyncStatus: null,
@@ -141,6 +144,7 @@ export const DEFAULT_INITIAL_PANELS = [
     url: 'https://13.140.84.27:14393/eX6Vvc2csV2GKtzmPF',
     apiKey: 'Wg6BrJKRiJzcNr4NKnjlxjZSAxMUIYkh7lzvWUDUQn3gxmW9',
     subBaseUrl: 'https://13.140.84.27:2096/xx11fs28c0ea3gr5/{subId}',
+    priority: 2,
     autoSync: true,
     lastSync: null,
     lastSyncStatus: null,
@@ -155,6 +159,7 @@ export const DEFAULT_INITIAL_PANELS = [
     url: 'https://core.erfjab.com',
     apiKey: '7c704f070ae553721bfa91b4bcfeb84e2eaa8109d09e56d00b471e9001ed5206',
     subBaseUrl: '',
+    priority: 3,
     autoSync: true,
     lastSync: null,
     lastSyncStatus: null,
@@ -199,6 +204,7 @@ export class PanelManager {
         url: 'https://core.erfjab.com',
         apiKey: '7c704f070ae553721bfa91b4bcfeb84e2eaa8109d09e56d00b471e9001ed5206',
         subBaseUrl: '',
+        priority: 3,
         autoSync: true,
         lastSync: null,
         lastSyncStatus: null,
@@ -209,6 +215,17 @@ export class PanelManager {
       needsSave = true;
     }
 
+    // Ensure all panels have valid integer priority
+    panels.forEach((p, idx) => {
+      if (typeof p.priority !== 'number' || isNaN(p.priority) || p.priority < 1) {
+        p.priority = idx + 1;
+        needsSave = true;
+      }
+    });
+
+    // Sort panels ascending by priority (1 = highest priority)
+    panels.sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
     if (needsSave) {
       await env.VPN_USERS.put('__CONFIG_PANELS__', JSON.stringify(panels));
     }
@@ -217,6 +234,9 @@ export class PanelManager {
   }
 
   static async savePanels(env, panels) {
+    if (Array.isArray(panels)) {
+      panels.sort((a, b) => (a.priority || 99) - (b.priority || 99));
+    }
     await env.VPN_USERS.put('__CONFIG_PANELS__', JSON.stringify(panels));
   }
 
@@ -224,6 +244,17 @@ export class PanelManager {
     const panels = await this.getPanels(env);
     const id = panelData.id || `panel_${Date.now()}`;
     const cleanUrl = (panelData.url || '').trim().replace(/\/+$/, '');
+    const existingIndex = panels.findIndex(p => p.id === id);
+
+    let parsedPriority = 1;
+    if (panelData.priority !== undefined && panelData.priority !== null && panelData.priority !== '') {
+      parsedPriority = parseInt(panelData.priority, 10);
+      if (isNaN(parsedPriority) || parsedPriority < 1) parsedPriority = 1;
+    } else if (existingIndex >= 0 && panels[existingIndex].priority) {
+      parsedPriority = panels[existingIndex].priority;
+    } else {
+      parsedPriority = panels.length + 1;
+    }
 
     const newPanel = {
       id: id,
@@ -232,6 +263,7 @@ export class PanelManager {
       url: cleanUrl,
       apiKey: (panelData.apiKey || panelData.api_key || '').trim(),
       subBaseUrl: (panelData.subBaseUrl || panelData.sub_base_url || '').trim(),
+      priority: parsedPriority,
       autoSync: panelData.autoSync !== false && panelData.auto_sync !== false,
       lastSync: panelData.lastSync || null,
       lastSyncStatus: panelData.lastSyncStatus || null,
@@ -240,13 +272,13 @@ export class PanelManager {
       createdAt: panelData.createdAt || Math.floor(Date.now() / 1000)
     };
 
-    const existingIndex = panels.findIndex(p => p.id === id);
     if (existingIndex >= 0) {
       panels[existingIndex] = { ...panels[existingIndex], ...newPanel };
     } else {
       panels.push(newPanel);
     }
 
+    panels.sort((a, b) => (a.priority || 99) - (b.priority || 99));
     await this.savePanels(env, panels);
     return newPanel;
   }
@@ -795,28 +827,79 @@ export class PanelManager {
           if (updates.traffic_total_bytes !== undefined) {
             payload.data_limit = updates.traffic_total_bytes;
           }
+          const authHeader = type === 'marzban' ? `Bearer ${apiKey}` : `ApiKey ${apiKey}`;
           await universalFetch(`${url}/api/user/${encodeURIComponent(username)}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               'X-API-KEY': apiKey,
-              'Authorization': `ApiKey ${apiKey}`
+              'Authorization': authHeader
             },
             body: JSON.stringify(payload)
           });
         }
-      } else if (type === 'goguard' || type === 'guard') {
-        const username = remoteInfo.username || remoteInfo.name;
-        if (username && updates.active !== undefined) {
-          const ep = updates.active ? '/api/subscriptions/enable' : '/api/subscriptions/disable';
-          await universalFetch(`${url}${ep}`, {
+      } else if (type === '3xui') {
+        const clientUuid = remoteInfo.clientUuid;
+        const inboundId = remoteInfo.inboundId;
+        if (clientUuid && inboundId) {
+          const updateUrl = url.includes('/panel')
+            ? `${url}/api/inbounds/updateClient/${clientUuid}`
+            : `${url}/panel/api/inbounds/updateClient/${clientUuid}`;
+
+          const clientObj = {
+            id: clientUuid,
+            email: remoteInfo.username || '',
+            subId: remoteInfo.subId || '',
+            enable: updates.active !== false
+          };
+          if (updates.expires_at !== undefined) {
+            clientObj.expiryTime = updates.expires_at ? updates.expires_at * 1000 : 0;
+          }
+          if (updates.traffic_total_bytes !== undefined) {
+            clientObj.totalGB = updates.traffic_total_bytes || 0;
+          }
+
+          await universalFetch(updateUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'X-API-Key': apiKey
+              'Cookie': `session=${apiKey}`,
+              'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ usernames: [username] })
+            body: JSON.stringify({
+              id: inboundId,
+              settings: JSON.stringify({ clients: [clientObj] })
+            })
           });
+        }
+      } else if (type === 'goguard' || type === 'guard') {
+        const username = remoteInfo.username || remoteInfo.name;
+        if (username) {
+          if (updates.active !== undefined) {
+            const ep = updates.active ? '/api/subscriptions/enable' : '/api/subscriptions/disable';
+            await universalFetch(`${url}${ep}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': apiKey
+              },
+              body: JSON.stringify({ usernames: [username] })
+            }).catch(() => {});
+          }
+
+          if (updates.traffic_total_bytes !== undefined || updates.expires_at !== undefined) {
+            const ggPayload = {};
+            if (updates.traffic_total_bytes !== undefined) ggPayload.limit_usage = updates.traffic_total_bytes;
+            if (updates.expires_at !== undefined) ggPayload.limit_expire = updates.expires_at;
+            await universalFetch(`${url}/api/subscriptions/${encodeURIComponent(username)}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': apiKey
+              },
+              body: JSON.stringify(ggPayload)
+            }).catch(() => {});
+          }
         }
       }
     } catch (e) {
