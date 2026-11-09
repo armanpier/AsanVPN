@@ -185,8 +185,8 @@ export default {
     // App Version & In-App Update API Endpoint
     if ((path === '/api/v1/app/version' || path === '/api/v1/version' || path === '/version') && (request.method === 'GET' || request.method === 'HEAD')) {
       const rawMeta = await env.VPN_USERS.get('apk_meta');
-      let version = "1.2.0";
-      let versionCode = 5;
+      let version = "1.3.2";
+      let versionCode = 8;
       let changelog = "طراحی جدید و مدرن سفید سه‌بعدی، آیکون رسمی جدید، اتصال خودکار با دیپ‌لینک و سیستم به‌روزرسانی خودکار داخلی";
       let totalSize = 69791489;
       if (rawMeta) {

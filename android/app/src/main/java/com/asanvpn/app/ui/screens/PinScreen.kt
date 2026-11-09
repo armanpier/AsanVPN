@@ -25,13 +25,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockClock
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.asanvpn.app.data.PreferencesManager
@@ -67,6 +61,9 @@ fun PinScreen(
     errorMessage: String?,
     isSuccess: Boolean,
     lockoutUntil: Long = 0L,
+    appVersion: String = "1.3.2",
+    newVersionAvailable: String? = null,
+    onCheckUpdate: () -> Unit = {},
     onPinComplete: (String) -> Unit,
     onLockoutExpired: () -> Unit = {}
 ) {
@@ -738,11 +735,26 @@ fun PinScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "نسخه ۱.۱.۲",
-                        fontSize = 11.sp,
-                        color = TextMuted
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.clickable { onCheckUpdate() }
+                    ) {
+                        Text(
+                            text = if (newVersionAvailable != null) "نسخه جدید: $newVersionAvailable" else "نسخه $appVersion",
+                            fontSize = 11.sp,
+                            fontWeight = if (newVersionAvailable != null) FontWeight.Bold else FontWeight.Normal,
+                            color = if (newVersionAvailable != null) Color(0xFFDC2626) else TextMuted
+                        )
+                        if (newVersionAvailable != null) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = "به‌روزرسانی",
+                                tint = Color(0xFFDC2626),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(16.dp))
                     TextButton(
                         onClick = { showDebugDialog = true }

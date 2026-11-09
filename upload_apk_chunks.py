@@ -25,12 +25,12 @@ with open(apk_path, 'rb') as f:
         chunks += 1
 
 meta = {
-    'version': '1.3.1',
-    'versionCode': 7,
+    'version': '1.3.2',
+    'versionCode': 8,
     'total_size': size,
     'total_chunks': chunks,
     'chunk_size': chunk_size,
-    'filename': 'AsanVPN-v1.3.1-universal.apk',
+    'filename': 'AsanVPN-v1.3.2-universal.apk',
     'sha256': hasher.hexdigest()
 }
 
@@ -38,7 +38,7 @@ meta_file = os.path.join(out_dir, 'meta.json')
 with open(meta_file, 'w', encoding='utf-8') as mf:
     json.dump(meta, mf)
 
-print(f'Chunked {chunks} chunks for v1.3.0, total size: {size}')
+print(f'Chunked {chunks} chunks for v1.3.2, total size: {size}')
 
 ns = 'aaf46b23b63c44a0a846911ea4b2aa19'
 worker_dir = os.path.abspath('backend/worker')

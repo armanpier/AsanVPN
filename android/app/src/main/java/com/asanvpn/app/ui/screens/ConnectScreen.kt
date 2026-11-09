@@ -55,6 +55,8 @@ fun ConnectScreen(
     uploadTraffic: String = "۰ B",
     downloadSpeed: String = "",
     uploadSpeed: String = "",
+    appVersion: String = "1.3.2",
+    newVersionAvailable: String? = null,
     onToggleConnect: () -> Unit,
     onContactSupport: () -> Unit = {},
     onCheckUpdate: () -> Unit = {},
@@ -201,20 +203,46 @@ fun ConnectScreen(
                         )
                     }
 
-                    // Check for Updates button
-                    Box(
+                    // Check for Updates button with dynamic version badge
+                    Row(
                         modifier = Modifier
-                            .size(40.dp)
+                            .height(40.dp)
                             .neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
-                            .clickable { onCheckUpdate() },
-                        contentAlignment = Alignment.Center
+                            .background(
+                                if (newVersionAvailable != null) Color(0xFFFEF2F2) else NeumorphSurface,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (newVersionAvailable != null) AccentCoral.copy(alpha = 0.6f) else NeumorphBorderLight,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onCheckUpdate() }
+                            .padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SystemUpdate,
                             contentDescription = "بررسی به‌روزرسانی",
-                            tint = AccentCoral,
-                            modifier = Modifier.size(19.dp)
+                            tint = if (newVersionAvailable != null) Color(0xFFDC2626) else AccentCoral,
+                            modifier = Modifier.size(18.dp)
                         )
+                        if (newVersionAvailable != null) {
+                            Text(
+                                text = "نسخه جدید: $newVersionAvailable",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFDC2626)
+                            )
+                        } else {
+                            Text(
+                                text = "نسخه $appVersion",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextSecondary
+                            )
+                        }
                     }
                 }
 
@@ -864,7 +892,7 @@ fun ConnectScreen(
             // Change PIN / Switch Account
             TextButton(
                 onClick = onChangePin,
-                modifier = Modifier.padding(bottom = 6.dp)
+                modifier = Modifier.padding(bottom = 2.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Key,
@@ -879,6 +907,14 @@ fun ConnectScreen(
                     color = TextSecondary
                 )
             }
+
+            Text(
+                text = "نسخه $appVersion • سامانه ابری آسان وی‌پی‌ان",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                color = TextMuted,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
         }
     }
 
