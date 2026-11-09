@@ -244,10 +244,6 @@ async def show_plans_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
-async def plan_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
 async def create_and_send_checkout_invoice(context: ContextTypes.DEFAULT_TYPE, query, plan_id: str, order_type: str = "new", target_pin: str = None):
     plan = await db.get_plan_by_id(plan_id)
     if not plan:
@@ -599,6 +595,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
             return False
 
         await db.mark_order_paid(uid, tracking_code, assigned_pin=target_pin)
+        await db.link_pin_to_user(telegram_id, target_pin)
 
         new_exp = res.get("new_expires_at")
         exp_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(new_exp)) if new_exp else f"{days} روز اضافه شد"
@@ -698,6 +695,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
 
         pin = created_user["pin"]
         await db.mark_order_paid(uid, tracking_code, assigned_pin=pin)
+        await db.link_pin_to_user(telegram_id, pin)
 
         # Notify buyer
         if is_admin_test:
@@ -2247,6 +2245,8 @@ async def auto_check_pending_invoices(context: ContextTypes.DEFAULT_TYPE):
         pending_orders = await db.get_pending_orders(older_than_seconds=1800)
         for order in pending_orders:
             uid = order["hooshpay_uid"]
+            if uid.startswith("ADMIN_"):
+                continue
             verify_res = await hooshpay.verify_invoice(uid)
             if verify_res.get("paid"):
                 tracking_code = (
