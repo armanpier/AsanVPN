@@ -250,18 +250,23 @@ class VpnRepository(private val context: Context) {
                         AppLogger.logUser("✅ مشخصات اشتراک تایید شد (${count} سرور دریافت گردید)")
                         AppLogger.logAdmin("Connect SUCCESS. Nodes: $count. Raw response: $responseStr")
                         return@withContext Result.success(parsed)
-                    } else if (response.code == 403 || parsed?.status == "invalid_pin" || parsed?.status == "disabled" || parsed?.status == "expired" || parsed?.status == "deleted" || parsed?.status == "device_locked") {
+                    } else if (parsed != null && (parsed.status == "invalid_pin" || parsed.status == "disabled" || parsed.status == "expired" || parsed.status == "deleted" || parsed.status == "device_locked")) {
                         isPinRejected = true
-                        rejectionMessageFa = parsed?.messageFa ?: "کد اشتراک نامعتبر است یا توسط مدیر غیرفعال/حذف شده است."
+                        rejectionMessageFa = parsed.messageFa ?: when (parsed.status) {
+                            "disabled" -> "اشتراک شما توسط مدیر غیرفعال شده است."
+                            "expired" -> "اشتراک شما به پایان رسیده است. جهت تمدید با پشتیبانی تماس بگیرید."
+                            "device_locked" -> "ظرفیت دستگاه‌های مجاز برای این اشتراک تکمیل شده است."
+                            else -> "کد اشتراک نامعتبر است یا توسط مدیر حذف شده است."
+                        }
                         AppLogger.logUser("❌ وضعیت اشتراک: $rejectionMessageFa")
-                        AppLogger.logAdmin("Auth Rejected: HTTP ${response.code} | $responseStr")
-                        return@withContext Result.failure(AuthRevokedException(parsed?.status ?: "invalid_pin", rejectionMessageFa))
-                    } else if (response.code == 429 || parsed?.status == "rate_limited") {
+                        AppLogger.logAdmin("Auth Rejected: HTTP ${response.code} | Status: ${parsed.status} | $responseStr")
+                        return@withContext Result.failure(AuthRevokedException(parsed.status, rejectionMessageFa))
+                    } else if (parsed != null && (response.code == 429 || parsed.status == "rate_limited")) {
                         isPinRejected = true
-                        val lockUntil = parsed?.lockedUntilTimestamp ?: (System.currentTimeMillis() + ((parsed?.retryAfterSeconds ?: 1800L) * 1000L))
+                        val lockUntil = parsed.lockedUntilTimestamp ?: (System.currentTimeMillis() + ((parsed.retryAfterSeconds ?: 1800L) * 1000L))
                         prefs.lockoutUntil = lockUntil
                         prefs.failedPinAttempts = 3
-                        rejectionMessageFa = parsed?.messageFa ?: "تعداد تلاش‌ها بیش از حد مجاز است. لطفاً ۳۰ دقیقه دیگر تلاش کنید."
+                        rejectionMessageFa = parsed.messageFa ?: "تعداد تلاش‌ها بیش از حد مجاز است. لطفاً ۳۰ دقیقه دیگر تلاش کنید."
                         AppLogger.logUser("⚠️ محدودیت تلاش: بیش از حد مجاز")
                         AppLogger.logAdmin("Rate limited: $responseStr")
                         return@withContext Result.failure(Exception(rejectionMessageFa))

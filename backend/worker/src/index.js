@@ -579,16 +579,14 @@ export default {
       // ADMIN ENDPOINTS (Requires X-Admin-Token header)
       // -------------------------------------------------------------
       const customPassword = await env.VPN_USERS.get('__ADMIN_CUSTOM_PASSWORD__');
-      const validTokens = customPassword
-        ? [customPassword.trim()]
-        : [env.ADMIN_TOKEN].filter(Boolean);
+      const validTokens = [
+        customPassword ? customPassword.trim() : null,
+        env.ADMIN_TOKEN ? env.ADMIN_TOKEN.trim() : null
+      ].filter(Boolean);
 
       function checkAdminAuth(token) {
         if (!token) return false;
         const clean = String(token).trim().replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
-        if (customPassword) {
-          return clean === customPassword.trim();
-        }
         return validTokens.some(vt => vt === clean || vt.toLowerCase() === clean.toLowerCase());
       }
 

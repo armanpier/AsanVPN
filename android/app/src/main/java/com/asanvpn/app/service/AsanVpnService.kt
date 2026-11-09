@@ -149,11 +149,8 @@ class AsanVpnService : VpnService() {
                     }
                     val res = repo.syncWithWorker(pin)
                     res.onFailure { error ->
-                        val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
-                            error.message?.let { msg ->
-                                msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
-                                msg.contains("invalid") || msg.contains("disabled")
-                            } == true
+                        val isRevoked = error is com.asanvpn.app.data.AuthRevokedException &&
+                            (error.status == "invalid_pin" || error.status == "deleted" || error.status == "disabled")
 
                         if (isRevoked) {
                             Log.w("AsanVpnService", "Session revoked on server! Killing VPN tunnel...")

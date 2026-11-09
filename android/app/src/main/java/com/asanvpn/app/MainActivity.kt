@@ -296,15 +296,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val result = repository.syncWithWorker(pin)
             result.onFailure { error ->
-                val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
-                    error.message?.let { msg ->
-                        msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
-                        msg.contains("invalid") || msg.contains("disabled")
-                    } == true
-
-                if (isRevoked) {
-                    withContext(Dispatchers.Main) {
-                        kickoutRevokedUser(error.message ?: "اشتراک شما توسط مدیر حذف شده است.")
+                if (error is com.asanvpn.app.data.AuthRevokedException) {
+                    val status = error.status
+                    if (status == "invalid_pin" || status == "deleted" || status == "disabled") {
+                        withContext(Dispatchers.Main) {
+                            kickoutRevokedUser(error.message)
+                        }
                     }
                 }
             }
@@ -480,16 +477,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }.onFailure { error ->
                     if (!isActive || connectionState != ConnectionState.CONNECTING) return@onFailure
-                    val isRevoked = error is com.asanvpn.app.data.AuthRevokedException ||
-                        error.message?.let { msg ->
-                            msg.contains("نامعتبر") || msg.contains("حذف") || msg.contains("غیرفعال") ||
-                            msg.contains("invalid") || msg.contains("منقضی") || msg.contains("مسدود") ||
-                            msg.contains("expired") || msg.contains("disabled") || msg.contains("device_locked")
-                        } == true
-
-                    if (isRevoked) {
-                        kickoutRevokedUser(error.message ?: "اشتراک شما حذف یا غیرفعال شده است.")
-                        return@launch
+                    if (error is com.asanvpn.app.data.AuthRevokedException) {
+                        val status = error.status
+                        if (status == "invalid_pin" || status == "deleted" || status == "disabled") {
+                            kickoutRevokedUser(error.message)
+                            return@launch
+                        } else if (status == "expired") {
+                            isExpired = true
+                            connectionState = ConnectionState.DISCONNECTED
+                            return@launch
+                        } else if (status == "device_locked") {
+                            connectionState = ConnectionState.DISCONNECTED
+                            Toast.makeText(this@MainActivity, error.message, Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
                     }
 
                     val cachedConfig = prefs.activeV2RayConfig
