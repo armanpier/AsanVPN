@@ -182,6 +182,40 @@ export default {
       }), { headers: corsHeaders });
     }
 
+    // App Version & In-App Update API Endpoint
+    if ((path === '/api/v1/app/version' || path === '/api/v1/version' || path === '/version') && (request.method === 'GET' || request.method === 'HEAD')) {
+      const rawMeta = await env.VPN_USERS.get('apk_meta');
+      let version = "1.2.0";
+      let versionCode = 5;
+      let changelog = "طراحی جدید و مدرن سفید سه‌بعدی، آیکون رسمی جدید، اتصال خودکار با دیپ‌لینک و سیستم به‌روزرسانی خودکار داخلی";
+      let totalSize = 69791489;
+      if (rawMeta) {
+        try {
+          const meta = JSON.parse(rawMeta);
+          if (meta.version) version = meta.version;
+          if (meta.versionCode) versionCode = meta.versionCode;
+          if (meta.total_size) totalSize = meta.total_size;
+          if (meta.changelog) changelog = meta.changelog;
+        } catch (e) {}
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        versionName: version,
+        versionCode: versionCode,
+        totalSize: totalSize,
+        downloadUrl: "https://asanvpn-worker.hi-deploy.workers.dev/download",
+        githubUrl: "https://github.com/armanpier/AsanVPN/releases/latest",
+        releaseNotes: changelog,
+        publishedAt: Math.floor(Date.now() / 1000)
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+    }
+
     // Direct APK Download Endpoint (Hosted directly on Cloudflare Worker CDN)
     if ((path === '/download' || path === '/AsanVPN.apk' || path === '/apk') && (request.method === 'GET' || request.method === 'HEAD')) {
       const rawMeta = await env.VPN_USERS.get('apk_meta');

@@ -32,3 +32,6 @@ user_*.json
 # OS / IDE
 .vscode/
 Thumbs.db
+__pycache__/
+*.pyc
+release-apks/

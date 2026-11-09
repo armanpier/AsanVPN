@@ -17,15 +17,19 @@ import com.asanvpn.app.data.VpnRepository
 import com.asanvpn.app.data.models.ConnectionState
 import com.asanvpn.app.service.AsanVpnService
 import com.asanvpn.app.service.PingTester
+import com.asanvpn.app.ui.components.UpdateDialog
 import com.asanvpn.app.ui.screens.ConnectScreen
 import com.asanvpn.app.ui.screens.ExpiredScreen
 import com.asanvpn.app.ui.screens.PinScreen
 import com.asanvpn.app.ui.theme.AsanVpnTheme
+import com.asanvpn.app.util.AppUpdateManager
+import com.asanvpn.app.util.AppVersionInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -44,6 +48,16 @@ class MainActivity : ComponentActivity() {
     private var isPinLoading by mutableStateOf(false)
     private var isPinSuccess by mutableStateOf(false)
     private var pinError by mutableStateOf<String?>(null)
+
+    // In-App Auto Update States
+    private var availableUpdate by mutableStateOf<AppVersionInfo?>(null)
+    private var isUpdateDownloading by mutableStateOf(false)
+    private var updateDownloadProgress by mutableFloatStateOf(0f)
+    private var updateDownloadedMb by mutableFloatStateOf(0f)
+    private var updateTotalMb by mutableFloatStateOf(0f)
+    private var updateDownloadError by mutableStateOf<String?>(null)
+    private var isUpdateDownloadComplete by mutableStateOf(false)
+    private var downloadedApkFile: File? = null
 
     // In / Out Traffic Statistics
     private var downloadTrafficState by mutableStateOf("۰ B")
@@ -113,6 +127,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Automatic background check for update on app startup
+        lifecycleScope.launch {
+            kotlinx.coroutines.delay(2000L)
+            triggerCheckForUpdate(manual = false)
+        }
+
         setContent {
             AsanVpnTheme {
                 val savedPin = currentPinState
@@ -169,6 +189,9 @@ class MainActivity : ComponentActivity() {
                             onContactSupport = {
                                 makeSupportCall(prefs.supportPhone)
                             },
+                            onCheckUpdate = {
+                                triggerCheckForUpdate(manual = true)
+                            },
                             onChangePin = {
                                 disconnectVpnService()
                                 prefs.clearAll()
@@ -183,6 +206,30 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+                }
+
+                // In-App Auto Update Dialog (Persian Yes/No)
+                availableUpdate?.let { updateInfo ->
+                    UpdateDialog(
+                        versionInfo = updateInfo,
+                        isDownloading = isUpdateDownloading,
+                        downloadProgress = updateDownloadProgress,
+                        downloadedMb = updateDownloadedMb,
+                        totalMb = updateTotalMb,
+                        downloadError = updateDownloadError,
+                        isDownloadComplete = isUpdateDownloadComplete,
+                        onConfirmUpdate = {
+                            startDownloadUpdate(updateInfo)
+                        },
+                        onInstallApk = {
+                            downloadedApkFile?.let { apk ->
+                                AppUpdateManager.installApk(this@MainActivity, apk)
+                            }
+                        },
+                        onDismiss = {
+                            availableUpdate = null
+                        }
+                    )
                 }
             }
         }
@@ -568,6 +615,73 @@ class MainActivity : ComponentActivity() {
             uploadTrafficState = "۴۵۰ MB"
             downloadSpeedState = "۴.۲ MB/s"
             uploadSpeedState = "۸۲۰ KB/s"
+        }
+
+        if (incomingIntent?.getBooleanExtra("mock_update", false) == true) {
+            availableUpdate = AppVersionInfo(
+                versionCode = 6,
+                versionName = "1.2.1",
+                downloadUrl = "https://asanvpn-worker.hi-deploy.workers.dev/download",
+                releaseNotes = "ارتقای سرعت و پایداری اتصال، بهینه‌سازی مصرف باتری و پشتیبانی از قابلیت به‌روزرسانی خودکار داخلی",
+                totalSize = 69791489L
+            )
+        }
+    }
+
+    private fun triggerCheckForUpdate(manual: Boolean = false) {
+        lifecycleScope.launch {
+            val result = AppUpdateManager.checkForUpdate(this@MainActivity)
+            result.onSuccess { info ->
+                if (info != null) {
+                    availableUpdate = info
+                } else if (manual) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "شما در حال استفاده از آخرین نسخه آسان وی‌پی‌ان هستید.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }.onFailure { err ->
+                if (manual) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "خطا در بررسی نسخه جدید: ${err.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun startDownloadUpdate(info: AppVersionInfo) {
+        isUpdateDownloading = true
+        updateDownloadError = null
+        isUpdateDownloadComplete = false
+        updateDownloadProgress = 0f
+        updateDownloadedMb = 0f
+        updateTotalMb = if (info.totalSize > 0) info.totalSize / (1024f * 1024f) else 0f
+
+        lifecycleScope.launch {
+            val res = AppUpdateManager.downloadApk(
+                context = this@MainActivity,
+                downloadUrl = info.downloadUrl,
+                onProgress = { progress, downloaded, total ->
+                    updateDownloadProgress = progress
+                    updateDownloadedMb = downloaded
+                    if (total > 0) updateTotalMb = total
+                }
+            )
+
+            res.onSuccess { file ->
+                isUpdateDownloading = false
+                isUpdateDownloadComplete = true
+                downloadedApkFile = file
+                // Prompt the OS installer
+                AppUpdateManager.installApk(this@MainActivity, file)
+            }.onFailure { err ->
+                isUpdateDownloading = false
+                updateDownloadError = err.message ?: "خطا در دانلود فایل نصبی"
+            }
         }
     }
 

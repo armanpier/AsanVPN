@@ -55,6 +55,7 @@ fun ConnectScreen(
     uploadSpeed: String = "",
     onToggleConnect: () -> Unit,
     onContactSupport: () -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
     onChangePin: () -> Unit
 ) {
     val context = LocalContext.current
@@ -164,20 +165,42 @@ fun ConnectScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Discreet Debug Info Icon in soft neumorphic button
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
-                        .clickable { showDebugDialog = true },
-                    contentAlignment = Alignment.Center
+                // Top Action Buttons: Info & Check Update
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "گزارش وضعیت",
-                        tint = TextSecondary,
-                        modifier = Modifier.size(19.dp)
-                    )
+                    // Discreet Debug Info Icon in soft neumorphic button
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
+                            .clickable { showDebugDialog = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "گزارش وضعیت",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
+                    // Check for Updates button
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
+                            .clickable { onCheckUpdate() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = "بررسی به‌روزرسانی",
+                            tint = AccentCoral,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                 }
 
                 // User Profile Chip (Neumorphic Raised Pill)
