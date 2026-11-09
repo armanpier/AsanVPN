@@ -418,6 +418,51 @@ class BotDatabase:
             await db.execute("DELETE FROM test_claims WHERE pin = ?", (clean_pin,))
             await db.commit()
 
+    async def remove_subscription_by_pin(self, pin: str) -> dict:
+        """
+        Purge/revoke a subscription PIN from SQLite and return linked user ids.
+        """
+        clean_pin = str(pin).strip()
+        linked_users = []
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT telegram_id FROM user_pinned_accounts WHERE pin = ?", (clean_pin,)) as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    if r["telegram_id"] not in linked_users:
+                        linked_users.append(r["telegram_id"])
+
+            async with db.execute("SELECT DISTINCT telegram_id FROM orders WHERE assigned_pin = ?", (clean_pin,)) as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    if r["telegram_id"] not in linked_users:
+                        linked_users.append(r["telegram_id"])
+
+            await db.execute("DELETE FROM user_pinned_accounts WHERE pin = ?", (clean_pin,))
+            await db.execute("UPDATE orders SET assigned_pin = NULL, status = 'revoked' WHERE assigned_pin = ?", (clean_pin,))
+            await db.execute("DELETE FROM test_claims WHERE pin = ?", (clean_pin,))
+            await db.commit()
+
+        return {
+            "pin": clean_pin,
+            "linked_users": linked_users
+        }
+
+    async def get_user_by_id(self, telegram_id: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
+
+    async def get_user_by_username(self, username: str):
+        clean_user = username.strip().lstrip("@").lower()
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM users WHERE LOWER(username) = ?", (clean_user,)) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
+
     async def has_paid_order(self, telegram_id: int) -> bool:
         """Check if user has ever completed a paid order"""
         async with aiosqlite.connect(self.db_path) as db:

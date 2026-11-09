@@ -841,11 +841,14 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineKeyboardButton("📊 گزارشات مالی کامل", callback_data="admin_stats_full")
         ],
         [
+            InlineKeyboardButton("🗑 حذف و ابطال اشتراک کاربر", callback_data="admin_remove_sub"),
+            InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast")
+        ],
+        [
             InlineKeyboardButton("📝 تنظیمات متون", callback_data="admin_texts"),
             InlineKeyboardButton("🔔 تنظیمات اعلانات", callback_data="admin_notifications")
         ],
         [
-            InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast"),
             InlineKeyboardButton("💾 تنظیمات و مدیریت بکاپ", callback_data="admin_backup_menu")
         ],
         [
@@ -858,6 +861,227 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
     elif update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+# Admin: Remove / Revoke Subscription Flow
+async def admin_remove_sub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    ADMIN_STATES[user_id] = {"action": "await_sub_to_remove"}
+
+    text = (
+        "🗑 <b>حذف و ابطال اشتراک کاربر (Revoke Subscription)</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        "برای جستجو و لغو اشتراک، لطفاً یکی از موارد زیر را ارسال فرمایید:\n\n"
+        "1️⃣ <b>کد ۸ رقمی اشتراک (PIN):</b> مانند <code>88605949</code>\n"
+        "2️⃣ <b>شناسه عددی کاربر (Telegram ID):</b> مانند <code>93795023</code>\n"
+        "3️⃣ <b>نام کاربری تلگرام:</b> مانند <code>@username</code>\n\n"
+        "⚡️ <i>می‌توانید مستقیماً از دستور سریع زیر نیز استفاده فرمایید:</i>\n"
+        "<code>/delpin 88605949</code>\n\n"
+        "⛔️ <b>توجه مهم:</b> با حذف اشتراک، دسترسی کاربر بلافاصله در ورکر کلودفلر، سرورها و تمامی پنل‌های متصل مسدود شده و کد از دیتابیس پاک خواهد شد.\n\n"
+        "جهت انصراف عبارت <code>/cancel</code> را بفرستید."
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_dashboard")]
+    ])
+
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+async def show_admin_del_pin_card(update: Update, context: ContextTypes.DEFAULT_TYPE, pin: str, target_tid: int = None):
+    clean_pin = str(pin).strip()
+    is_query = hasattr(update, "callback_query") and update.callback_query is not None
+    query = update.callback_query if is_query else None
+
+    loading_text = f"⏳ در حال بررسی مشخصات اشتراک <code>{clean_pin}</code> از ورکر و پنل‌ها..."
+    if query:
+        msg = await query.edit_message_text(loading_text, parse_mode=ParseMode.HTML)
+    else:
+        msg = await update.message.reply_text(loading_text, parse_mode=ParseMode.HTML)
+
+    user_record = await worker.get_user_by_pin(clean_pin)
+
+    linked_tids = []
+    if target_tid:
+        linked_tids.append(target_tid)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        async with conn.execute("SELECT telegram_id FROM user_pinned_accounts WHERE pin = ?", (clean_pin,)) as cur:
+            rows = await cur.fetchall()
+            for r in rows:
+                if r["telegram_id"] not in linked_tids:
+                    linked_tids.append(r["telegram_id"])
+        async with conn.execute("SELECT DISTINCT telegram_id FROM orders WHERE assigned_pin = ?", (clean_pin,)) as cur:
+            rows = await cur.fetchall()
+            for r in rows:
+                if r["telegram_id"] not in linked_tids:
+                    linked_tids.append(r["telegram_id"])
+
+    linked_tids_str = ", ".join([f"<code>{tid}</code>" for tid in linked_tids]) if linked_tids else "ثبت نشده"
+
+    if not user_record:
+        text = (
+            f"⚠️ <b>اشتراک در ورکر کلودفلر یافت نشد!</b>\n\n"
+            f"کد <code>{clean_pin}</code> در سرورهای ابری کلودفلر وجود ندارد یا قبلاً حذف شده است.\n"
+            f"👤 شناسه‌های مرتبط در دیتابیس ربات: {linked_tids_str}\n\n"
+            "آیا مایلید این کد از دیتابیس ربات و سوابق پاکسازی شود؟"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗑 پاکسازی کامل از دیتابیس ربات", callback_data=f"admin_del_confirm:{clean_pin}")],
+            [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_remove_sub")],
+            [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+        ])
+        await msg.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+        return
+
+    name = user_record.get("name") or "کاربر آسان وی‌پی‌ان"
+    now = int(time.time())
+    expires_at = user_record.get("expires_at")
+    if expires_at and expires_at > 0:
+        days_left = max(0, (expires_at - now) // 86400)
+        import datetime
+        dt = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+        exp_date_str = dt.strftime("%Y-%m-%d")
+        exp_str = f"<b>{days_left} روز باقی‌مانده</b> ({exp_date_str})"
+    else:
+        exp_str = "<b>نامحدود / بدون انقضا</b>"
+
+    traffic_total = user_record.get("traffic_total_bytes", 0)
+    traffic_rem = user_record.get("traffic_remaining_bytes", -1)
+    if traffic_rem == -1 or traffic_total == 0:
+        traffic_str = "<b>نامحدود</b>"
+    else:
+        rem_gb = round(traffic_rem / (1024**3), 2)
+        tot_gb = round(traffic_total / (1024**3), 2)
+        used_gb = round(max(0, traffic_total - traffic_rem) / (1024**3), 2)
+        traffic_str = f"<b>{used_gb} GB مصرفی</b> از {tot_gb} GB ({rem_gb} GB مانده)"
+
+    devices = user_record.get("devices", [])
+    max_dev = user_record.get("max_devices", 2)
+    dev_str = f"<b>{len(devices)} از {max_dev} دستگاه فعال</b>"
+
+    panel_mappings = user_record.get("remote_panel_mappings", {})
+    if isinstance(panel_mappings, dict) and panel_mappings:
+        panels_str = f"متصل به {len(panel_mappings)} پنل سرور ({', '.join(panel_mappings.keys())})"
+    else:
+        panels_str = "بدون سرور متصل"
+
+    active = user_record.get("active", True)
+    status_icon = "🟢 فعال" if active else "🔴 غیرفعال / منقضی"
+
+    text = (
+        "⚠️ <b>بررسی و تأییدیه حذف اشتراک:</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        f"🔑 <b>کد اختصاصی اشتراک (PIN):</b> <code>{clean_pin}</code>\n"
+        f"👤 <b>نام کاربر / برچسب:</b> {name}\n"
+        f"🆔 <b>آیدی تلگرام مرتبط:</b> {linked_tids_str}\n"
+        f"⚡️ <b>وضعیت اتصال:</b> {status_icon}\n"
+        f"📊 <b>حجم ترافیک:</b> {traffic_str}\n"
+        f"⏳ <b>اعتبار زمانی:</b> {exp_str}\n"
+        f"📱 <b>دستگاه‌های همزمان:</b> {dev_str}\n"
+        f"🌐 <b>پنل‌های شبکه:</b> {panels_str}\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        "⛔️ <b>هشدار مهم:</b> با تأیید، این اشتراک <b>بلافاصله و به طور دائمی</b> از ورکر کلودفلر، سرورها و پنل‌های بالادستی حذف شده، اتصال کاربر قطع و کد از دیتابیس ربات پاک خواهد شد!\n\n"
+        "آیا از حذف کامل این اشتراک اطمینان دارید؟"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑 بله، اشتراک حذف و مسدود شود", callback_data=f"admin_del_confirm:{clean_pin}")],
+        [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_remove_sub")],
+        [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+    ])
+
+    await msg.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+async def process_admin_sub_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE, query_str: str):
+    user_id = update.effective_user.id
+    raw = query_str.strip()
+
+    if raw.lower() in ("/cancel", "cancel", "لغو"):
+        ADMIN_STATES.pop(user_id, None)
+        await update.message.reply_text("عملیات حذف اشتراک لغو شد.", reply_markup=get_main_keyboard(user_id))
+        return
+
+    # Check username
+    if raw.startswith("@") or (not raw.isdigit() and len(raw) >= 3 and not re.fullmatch(r'\d{8}', raw)):
+        uname = raw.lstrip("@")
+        u_info = await db.get_user_by_username(uname)
+        if u_info:
+            target_tid = u_info["telegram_id"]
+            raw = str(target_tid)
+        else:
+            await update.message.reply_text(
+                f"❌ کاربری با نام کاربری <code>@{uname}</code> در سیستم یافت نشد.\nلطفاً کد ۸ رقمی PIN یا آیدی عددی تلگرام را وارد کنید:",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+    # Check 8-digit PIN
+    if re.fullmatch(r'\d{8}', raw):
+        ADMIN_STATES.pop(user_id, None)
+        await show_admin_del_pin_card(update, context, pin=raw)
+        return
+
+    # Check numeric Telegram ID
+    if raw.isdigit():
+        target_tid = int(raw)
+        pins = await db.get_user_all_pins(target_tid)
+        cf_users = await worker.find_users_by_telegram_id(target_tid)
+        for u in cf_users:
+            p = str(u.get("pin", "")).strip()
+            if p and p not in pins:
+                pins.append(p)
+
+        if not pins:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 جستجوی مجدد", callback_data="admin_remove_sub")],
+                [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+            ])
+            await update.message.reply_text(
+                f"❌ هیچ اشتراک فعالی برای شناسه تلگرام <code>{target_tid}</code> یافت نشد.\n\n"
+                "می‌توانید با وارد کردن مستقیم کد ۸ رقمی (PIN) آن را پیدا کنید.",
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        ADMIN_STATES.pop(user_id, None)
+        if len(pins) == 1:
+            await show_admin_del_pin_card(update, context, pin=pins[0], target_tid=target_tid)
+            return
+
+        text = (
+            f"📋 <b>اشتراک‌های یافت‌شده برای کاربر <code>{target_tid}</code>:</b>\n\n"
+            f"تعداد {len(pins)} اشتراک برای این کاربر پیدا شد. لطفاً اشتراکی که می‌خواهید حذف کنید را انتخاب نمایید:"
+        )
+        buttons = []
+        for p in pins:
+            buttons.append([InlineKeyboardButton(f"🗑 حذف کد {p}", callback_data=f"admin_del_pin_view:{p}")])
+        buttons.append([InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_dashboard")])
+
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=ParseMode.HTML)
+        return
+
+    await update.message.reply_text(
+        "⚠️ لطفاً یک <b>کد ۸ رقمی (PIN)</b> یا <b>آیدی عددی تلگرام</b> معتبر وارد کنید:\n(برای انصراف <code>/cancel</code>)",
+        parse_mode=ParseMode.HTML
+    )
+
+async def admin_delpin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    if context.args and len(context.args) > 0:
+        query_str = context.args[0].strip()
+        await process_admin_sub_lookup(update, context, query_str)
+    else:
+        await admin_remove_sub_menu(update, context)
 
 # Admin: Plans Management
 async def admin_plans_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1070,6 +1294,56 @@ async def admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TY
 
     if data == "admin_dashboard":
         await show_admin_dashboard(update, context)
+        return
+
+    if data == "admin_remove_sub":
+        await admin_remove_sub_menu(update, context)
+        return
+
+    if data.startswith("admin_del_pin_view:"):
+        pin = data.split(":")[1]
+        await show_admin_del_pin_card(update, context, pin)
+        return
+
+    if data.startswith("admin_del_confirm:"):
+        pin = data.split(":")[1]
+        ADMIN_STATES.pop(user_id, None)
+        await query.edit_message_text(
+            f"⏳ در حال ابطال و حذف اشتراک <code>{pin}</code> از ورکر کلودفلر، سرورها و دیتابیس...",
+            parse_mode=ParseMode.HTML
+        )
+
+        worker_res = await worker.delete_user(pin)
+        db_res = await db.remove_subscription_by_pin(pin)
+
+        linked_users = db_res.get("linked_users", [])
+        linked_str = ", ".join([f"<code>{u}</code>" for u in linked_users]) if linked_users else "ثبت نشده"
+
+        success_text = (
+            "✅ <b>اشتراک با موفقیت ابطال و حذف گردید!</b>\n"
+            "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+            f"🔑 <b>کد اشتراک:</b> <code>{pin}</code>\n"
+            f"👤 <b>کاربران تلگرام مرتبط:</b> {linked_str}\n"
+            "🗑 <b>ورکر کلودفلر:</b> کاربر و دسترسی حذف گردید\n"
+            "🌐 <b>پنل‌ها و سرورها:</b> اکانت مسدود و از سرورها پاک شد\n"
+            "🗄 <b>دیتابیس ربات:</b> وضعیت سفارش به باطل‌شده (revoked) تغییر یافت\n\n"
+            "💡 این کد دیگر تحت هیچ شرایطی امکان اتصال به شبکه آسان وی‌پی‌ان را ندارد."
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗑 حذف یک اشتراک دیگر", callback_data="admin_remove_sub")],
+            [InlineKeyboardButton("⚙️ بازگشت به پنل مدیریت", callback_data="admin_dashboard")]
+        ])
+
+        await query.edit_message_text(success_text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+        alert_msg = (
+            "🔔 <b>#ابطال_اشتراک_توسط_مدیر</b>\n\n"
+            f"👤 <b>مدیر اقدام‌کننده:</b> <code>{user_id}</code>\n"
+            f"🔑 <b>کد باطل‌شده:</b> <code>{pin}</code>\n"
+            f"🆔 <b>کاربر مرتبط:</b> {linked_str}"
+        )
+        await notify_admins(context, alert_msg)
         return
 
     if data == "admin_exit":
@@ -1317,6 +1591,11 @@ async def handle_admin_text_inputs(update: Update, context: ContextTypes.DEFAULT
     if text == "/cancel":
         ADMIN_STATES.pop(user_id, None)
         await update.message.reply_text("عملیات لغو شد.", reply_markup=get_main_keyboard(user_id))
+        return True
+
+    # Remove subscription lookup
+    if action == "await_sub_to_remove":
+        await process_admin_sub_lookup(update, context, text)
         return True
 
     # 1. Edit Plan Price
@@ -2022,6 +2301,7 @@ async def setup_bot_commands(application: Application):
     admin_commands = [
         BotCommand("start", "🚀 منوی اصلی و شروع مجدد (Restart)"),
         BotCommand("admin", "⚙️ پنل مدیریت هوشمند ربات"),
+        BotCommand("delpin", "🗑 حذف و ابطال اشتراک کاربر"),
         BotCommand("plans", "🛒 خرید اشتراک جدید"),
         BotCommand("test", "🎁 دریافت اشتراک تست رایگان (۱ روزه)"),
         BotCommand("renew", "🔄 تمدید و شارژ اشتراک"),
@@ -2061,6 +2341,8 @@ def build_app() -> Application:
     # Handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("admin", show_admin_dashboard))
+    app.add_handler(CommandHandler("delpin", admin_delpin_command))
+    app.add_handler(CommandHandler("removesub", admin_delpin_command))
     app.add_handler(CommandHandler("settings", show_admin_dashboard))
     app.add_handler(CommandHandler("plans", show_plans_menu))
     app.add_handler(CommandHandler("test", claim_free_test_plan))

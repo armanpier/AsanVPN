@@ -138,3 +138,24 @@ class WorkerClient:
         except Exception as e:
             logger.error(f"Error finding users by telegram_id {telegram_id}: {e}")
         return matched
+
+    async def delete_user(self, pin: str) -> dict:
+        """
+        Delete a user by PIN from Cloudflare Worker and remove them from all remote proxy panels.
+        """
+        url = f"{self.base_url}/api/v1/admin/delete"
+        payload = {"pin": str(pin).strip()}
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.post(url, json=payload, headers=self.headers)
+                data = res.json()
+                if res.status_code == 200:
+                    logger.info(f"User PIN {pin} successfully deleted from worker and remote panels: {data}")
+                    return data
+                else:
+                    logger.error(f"Worker delete failed: status={res.status_code} body={res.text}")
+                    return None
+        except Exception as e:
+            logger.exception(f"Exception deleting user in worker: {e}")
+            return None
+
