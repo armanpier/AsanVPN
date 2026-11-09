@@ -1,7 +1,7 @@
 import aiosqlite
 import logging
 import time
-from config import DB_PATH
+from config import DB_PATH, ADMIN_IDS
 
 logger = logging.getLogger("Database")
 
@@ -79,6 +79,7 @@ DEFAULT_SETTINGS = {
 class BotDatabase:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
+        self.admin_ids_cache: set[int] = {93795023} | set(ADMIN_IDS)
 
     async def init_db(self):
         async with aiosqlite.connect(self.db_path) as db:
@@ -88,6 +89,17 @@ class BotDatabase:
                     telegram_id INTEGER PRIMARY KEY,
                     username TEXT,
                     first_name TEXT,
+                    created_at INTEGER
+                )
+            """)
+
+            # Bot Admins table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS bot_admins (
+                    telegram_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    added_by INTEGER,
                     created_at INTEGER
                 )
             """)
@@ -174,8 +186,27 @@ class BotDatabase:
                             p["max_devices"], p["price_toman"], p["is_active"], p["sort_order"]
                         ))
 
+            # Seed default bot admins
+            now = int(time.time())
+            initial_admins = [93795023] + [aid for aid in ADMIN_IDS if aid != 93795023]
+            for aid in initial_admins:
+                async with db.execute("SELECT username, first_name FROM users WHERE telegram_id = ?", (aid,)) as cur:
+                    urow = await cur.fetchone()
+                    uname = urow[0] if urow and urow[0] else ""
+                    fname = urow[1] if urow and urow[1] else ("مالک اصلی" if aid == 93795023 else "مدیر سیستم")
+                await db.execute("""
+                    INSERT OR IGNORE INTO bot_admins (telegram_id, username, first_name, added_by, created_at)
+                    VALUES (?, ?, ?, 0, ?)
+                """, (aid, uname, fname, now))
+
             await db.commit()
-            logger.info("Database initialized successfully with dynamic plans and settings.")
+
+            # Load active admin IDs into memory cache
+            async with db.execute("SELECT telegram_id FROM bot_admins") as cur:
+                rows = await cur.fetchall()
+                self.admin_ids_cache = {93795023} | {r[0] for r in rows}
+
+            logger.info(f"Database initialized successfully. Active bot admins: {self.admin_ids_cache}")
 
     # ---------------- SETTINGS ----------------
     async def get_setting(self, key: str, default: str = None) -> str:
@@ -579,3 +610,86 @@ class BotDatabase:
                 "month_revenue": month_revenue,
                 "active_plans": active_plans
             }
+
+    # ---------------- ADMIN MANAGEMENT ----------------
+    def is_admin(self, telegram_id: int) -> bool:
+        if not telegram_id:
+            return False
+        return (telegram_id == 93795023) or (telegram_id in self.admin_ids_cache)
+
+    def get_admin_ids(self) -> set:
+        return set(self.admin_ids_cache) | {93795023}
+
+    async def get_all_admins(self) -> list:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM bot_admins
+                ORDER BY CASE WHEN telegram_id = 93795023 THEN 0 ELSE 1 END, created_at ASC
+            """) as cur:
+                rows = await cur.fetchall()
+                result = []
+                for r in rows:
+                    d = dict(r)
+                    d["is_owner"] = (d["telegram_id"] == 93795023)
+                    result.append(d)
+
+                # Ensure owner is always present
+                if not any(a["telegram_id"] == 93795023 for a in result):
+                    result.insert(0, {
+                        "telegram_id": 93795023,
+                        "username": "",
+                        "first_name": "Arman",
+                        "added_by": 0,
+                        "created_at": 0,
+                        "is_owner": True
+                    })
+                return result
+
+    async def add_admin(self, telegram_id: int, username: str = "", first_name: str = "", added_by: int = 0) -> bool:
+        async with aiosqlite.connect(self.db_path) as db:
+            # Query existing user info if details are blank
+            if not username or not first_name:
+                async with db.execute("SELECT username, first_name FROM users WHERE telegram_id = ?", (telegram_id,)) as cur:
+                    urow = await cur.fetchone()
+                    if urow:
+                        username = username or urow[0] or ""
+                        first_name = first_name or urow[1] or ""
+            now = int(time.time())
+            await db.execute("""
+                INSERT INTO bot_admins (telegram_id, username, first_name, added_by, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    username = COALESCE(NULLIF(excluded.username, ''), bot_admins.username),
+                    first_name = COALESCE(NULLIF(excluded.first_name, ''), bot_admins.first_name)
+            """, (telegram_id, username or "", first_name or "", added_by, now))
+            await db.commit()
+
+        self.admin_ids_cache.add(telegram_id)
+        return True
+
+    async def remove_admin(self, telegram_id: int) -> bool:
+        if telegram_id == 93795023:
+            return False  # Protected super admin / owner
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM bot_admins WHERE telegram_id = ?", (telegram_id,))
+            await db.commit()
+
+        self.admin_ids_cache.discard(telegram_id)
+        return True
+
+    async def find_user_by_query(self, query: str):
+        query = query.strip().lstrip("@")
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if query.isdigit():
+                async with db.execute("SELECT telegram_id, username, first_name FROM users WHERE telegram_id = ?", (int(query),)) as cur:
+                    row = await cur.fetchone()
+                    if row:
+                        return dict(row)
+                    return {"telegram_id": int(query), "username": "", "first_name": ""}
+            async with db.execute("SELECT telegram_id, username, first_name FROM users WHERE LOWER(username) = LOWER(?)", (query,)) as cur:
+                row = await cur.fetchone()
+                if row:
+                    return dict(row)
+        return None

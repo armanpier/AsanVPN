@@ -56,7 +56,7 @@ USER_STATES = {}
 ADMIN_STATES = {}
 
 def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS or user_id == 93795023
+    return db.is_admin(user_id)
 
 def get_main_keyboard(user_id: int):
     # Palette: Orange Pink (#FF6F52 -> danger), Glacial Depth (#004E64 -> primary)
@@ -558,7 +558,7 @@ async def notify_admins(context: ContextTypes.DEFAULT_TYPE, message_html: str):
     if notify_sale != "1":
         return
 
-    admin_targets = set(ADMIN_IDS) | {93795023}
+    admin_targets = db.get_admin_ids()
     for aid in admin_targets:
         try:
             await context.bot.send_message(chat_id=aid, text=message_html, parse_mode=ParseMode.HTML)
@@ -844,14 +844,15 @@ async def show_admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineKeyboardButton("🗑 حذف و ابطال اشتراک کاربر", callback_data="admin_remove_sub")
         ],
         [
-            InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast"),
-            InlineKeyboardButton("💾 تنظیمات و مدیریت بکاپ", callback_data="admin_backup_menu")
+            InlineKeyboardButton("👥 مدیریت مدیران ربات", callback_data="admin_manage_admins"),
+            InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data="admin_broadcast")
         ],
         [
-            InlineKeyboardButton("📝 تنظیمات متون", callback_data="admin_texts"),
-            InlineKeyboardButton("🔔 تنظیمات اعلانات", callback_data="admin_notifications")
+            InlineKeyboardButton("💾 تنظیمات و مدیریت بکاپ", callback_data="admin_backup_menu"),
+            InlineKeyboardButton("📝 تنظیمات متون", callback_data="admin_texts")
         ],
         [
+            InlineKeyboardButton("🔔 تنظیمات اعلانات", callback_data="admin_notifications"),
             InlineKeyboardButton("🔙 بازگشت به منوی کاربری", callback_data="admin_exit")
         ]
     ]
@@ -1213,6 +1214,211 @@ async def admin_delpin_command(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         await admin_remove_sub_menu(update, context)
 
+# ----------------- ADMINS MANAGEMENT (DYNAMIC ADD / REMOVE) -----------------
+
+async def admin_manage_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    ADMIN_STATES.pop(user_id, None)
+    admins = await db.get_all_admins()
+
+    text = (
+        "👥 <b>مدیریت مدیران ربات آسان وی‌پی‌ان (Admins Management)</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        "در این بخش می‌توانید لیست مدیران دارای دسترسی به پنل مدیریت را مشاهده، مدیر جدید اضافه کرده و یا دسترسی مدیران را لغو نمایید.\n\n"
+        f"👑 <b>لیست مدیران فعال ({len(admins)} نفر):</b>\n\n"
+    )
+
+    for idx, a in enumerate(admins, 1):
+        tid = a["telegram_id"]
+        fname = a.get("first_name") or "مدیر"
+        uname = f"@{a['username']}" if a.get("username") else "بدون یوزرنیم"
+        if a.get("is_owner") or tid == 93795023:
+            role_badge = "👑 <b>مالک اصلی (Super Admin)</b>"
+        else:
+            role_badge = "🛡️ <b>مدیر سیستم (Admin)</b>"
+        text += f"{idx}. <b>{fname}</b> ({uname} | <code>{tid}</code>)\n   🏷 سمت: {role_badge}\n\n"
+
+    text += (
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
+        "💡 <i>نکته امنیتی: مالک اصلی ربات غیرقابل حذف بوده و همواره دسترسی کامل دارد.</i>"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton("➕ افزودن مدیر جدید", callback_data="admin_add_admin_prompt"),
+            InlineKeyboardButton("➖ حذف مدیر", callback_data="admin_remove_admin_list")
+        ],
+        [
+            InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_dashboard")
+        ]
+    ]
+
+    markup = InlineKeyboardMarkup(keyboard)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+
+async def admin_add_admin_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    ADMIN_STATES[user_id] = {"action": "await_new_admin"}
+    text = (
+        "➕ <b>افزودن مدیر جدید به ربات:</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        "جهت اعطای دسترسی مدیریت، یکی از روش‌های زیر را انجام دهید:\n\n"
+        "1️⃣ <b>ارسال شناسه عددی تلگرام (Telegram ID):</b>\n"
+        "مثال: <code>7293867371</code>\n\n"
+        "2️⃣ <b>ارسال آیدی یا نام کاربری تلگرام:</b>\n"
+        "مثال: <code>@username</code>\n\n"
+        "3️⃣ <b>فوروارد پیام از کاربر:</b>\n"
+        "یک پیام از کاربر مورد نظر را به این چت فوروارد (Forward) کنید.\n\n"
+        "❌ جهت انصراف، دستور <code>/cancel</code> را ارسال فرمایید."
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_manage_admins")]
+    ])
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+
+async def admin_remove_admin_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    ADMIN_STATES.pop(user_id, None)
+    admins = await db.get_all_admins()
+    removable = [a for a in admins if not a.get("is_owner") and a["telegram_id"] != 93795023]
+
+    if not removable:
+        text = (
+            "ℹ️ <b>حذف مدیر:</b>\n\n"
+            "در حال حاضر هیچ مدیر فرعی دیگری جهت حذف وجود ندارد.\n"
+            "<i>(مالک اصلی ربات تحت هیچ شرایطی قابل حذف نیست.)</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 بازگشت به مدیریت مدیران", callback_data="admin_manage_admins")]
+        ])
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        elif update.message:
+            await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        return
+
+    text = (
+        "➖ <b>حذف دسترسی مدیر:</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        "لطفاً مدیری را که مایل به لغو دسترسی ایشان هستید انتخاب نمایید:"
+    )
+    keyboard = []
+    for a in removable:
+        tid = a["telegram_id"]
+        fname = a.get("first_name") or "مدیر"
+        uname = f"@{a['username']}" if a.get("username") else str(tid)
+        btn_text = f"❌ حذف: {fname} ({uname})"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"admin_del_admin_ask:{tid}")])
+
+    keyboard.append([InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="admin_manage_admins")])
+
+    markup = InlineKeyboardMarkup(keyboard)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+
+async def admin_del_admin_ask(update: Update, context: ContextTypes.DEFAULT_TYPE, target_id: int):
+    query = update.callback_query
+    await query.answer()
+
+    if target_id == 93795023:
+        await query.answer("مالک اصلی ربات غیرقابل حذف است!", show_alert=True)
+        return
+
+    admins = await db.get_all_admins()
+    target_info = next((a for a in admins if a["telegram_id"] == target_id), None)
+    target_name = target_info.get("first_name", "مدیر") if target_info else str(target_id)
+    target_user = f"@{target_info['username']}" if target_info and target_info.get("username") else str(target_id)
+
+    text = (
+        f"⚠️ <b>تأییدیه لغو دسترسی مدیریت: {target_name} ({target_user})</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        f"آیا از لغو دسترسی مدیریت کاربر <code>{target_id}</code> اطمینان دارید؟\n\n"
+        "🚫 <b>پیامدها:</b>\n"
+        "• دکمه «⚙️ پنل مدیریت هوشمند ربات» فوراً از منوی ایشان حذف می‌شود.\n"
+        "• کلیه دستورات و دسترسی‌های مدیریتی برای ایشان مسدود می‌گردد.\n"
+        "• منوی کاربری ایشان به حالت کاربر عادی بازنشانی می‌شود."
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑️ بله، دسترسی مدیریت حذف شود", callback_data=f"admin_del_admin_confirm:{target_id}")],
+        [InlineKeyboardButton("❌ انصراف", callback_data="admin_manage_admins")]
+    ])
+
+    await query.edit_message_text(text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+
+
+async def admin_del_admin_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE, target_id: int):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+
+    if target_id == 93795023:
+        await query.answer("مالک اصلی ربات تحت هیچ شرایطی قابل حذف نیست!", show_alert=True)
+        return
+
+    admins = await db.get_all_admins()
+    target_info = next((a for a in admins if a["telegram_id"] == target_id), None)
+    target_name = target_info.get("first_name", "کاربر") if target_info else str(target_id)
+
+    # 1. Remove from database and cache
+    await db.remove_admin(target_id)
+
+    # 2. Reset bot commands for the demoted user
+    try:
+        await context.bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=target_id))
+    except Exception as e:
+        logger.warning(f"Failed to reset commands for {target_id}: {e}")
+
+    # 3. Push plain user keyboard to the demoted user to remove the admin button immediately
+    try:
+        await context.bot.send_message(
+            chat_id=target_id,
+            text="ℹ️ دسترسی مدیریت شما در ربات آسان وی‌پی‌ان غیرفعال گردید.",
+            reply_markup=get_main_keyboard(target_id)
+        )
+    except Exception as e:
+        logger.info(f"Could not reach user {target_id} to refresh keyboard: {e}")
+
+    # 4. Notify all remaining admins
+    actor_name = query.from_user.first_name or str(user_id)
+    alert_msg = (
+        "🔔 <b>#لغو_دسترسی_مدیر</b>\n\n"
+        f"👤 <b>اقدام‌کننده:</b> {actor_name} (<code>{user_id}</code>)\n"
+        f"➖ <b>مدیر برکنارشده:</b> {target_name} (<code>{target_id}</code>)"
+    )
+    await notify_admins(context, alert_msg)
+
+    # 5. Success screen for executor
+    success_text = (
+        f"✅ <b>دسترسی مدیریت کاربر {target_name} (<code>{target_id}</code>) با موفقیت لغو شد.</b>\n\n"
+        "دکمه پنل مدیریت از حساب ایشان برداشته شد و منوی عادی فعال گردید."
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥 بازگشت به لیست مدیران", callback_data="admin_manage_admins")],
+        [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+    ])
+    await query.edit_message_text(success_text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
 # Admin: Plans Management
 async def admin_plans_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1443,6 +1649,29 @@ async def admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TY
     if data.startswith("test_pnl:"):
         panel_id = data.split(":")[1]
         await admin_test_panel_handler(update, context, panel_id)
+        return
+
+    # Admins Management callbacks
+    if data == "admin_manage_admins":
+        await admin_manage_admins(update, context)
+        return
+
+    if data == "admin_add_admin_prompt":
+        await admin_add_admin_prompt(update, context)
+        return
+
+    if data == "admin_remove_admin_list":
+        await admin_remove_admin_list(update, context)
+        return
+
+    if data.startswith("admin_del_admin_ask:"):
+        target_id = int(data.split(":")[1])
+        await admin_del_admin_ask(update, context, target_id)
+        return
+
+    if data.startswith("admin_del_admin_confirm:"):
+        target_id = int(data.split(":")[1])
+        await admin_del_admin_confirm(update, context, target_id)
         return
 
     if data == "admin_remove_sub":
@@ -1745,6 +1974,133 @@ async def handle_admin_text_inputs(update: Update, context: ContextTypes.DEFAULT
     # Remove subscription lookup
     if action == "await_sub_to_remove":
         await process_admin_sub_lookup(update, context, text)
+        return True
+
+    # Add new admin wizard
+    if action == "await_new_admin":
+        if text.lower() in ("/cancel", "cancel", "لغو"):
+            ADMIN_STATES.pop(user_id, None)
+            await update.message.reply_text("عملیات افزودن مدیر لغو شد.", reply_markup=get_main_keyboard(user_id))
+            return True
+
+        f_user = update.message.forward_from
+        target_id = None
+        target_username = ""
+        target_name = ""
+
+        if f_user:
+            target_id = f_user.id
+            target_username = f_user.username or ""
+            target_name = f_user.first_name or ""
+        elif update.message.forward_sender_name and not f_user:
+            await update.message.reply_text(
+                "⚠️ حساب کاربری این فرد فوروارد خصوصی (حفظ حریم خصوصی) دارد و آیدی عددی ایشان از طریق فوروارد قابل دریافت نیست.\n\n"
+                "💡 لطفاً <b>شناسه عددی تلگرام (Telegram ID)</b> ایشان را مستقیماً به صورت عدد ارسال فرمایید.\n"
+                "(برای انصراف: <code>/cancel</code>)",
+                parse_mode=ParseMode.HTML
+            )
+            return True
+        else:
+            raw_target = text.strip()
+            if raw_target.isdigit():
+                target_id = int(raw_target)
+                u_info = await db.find_user_by_query(str(target_id))
+                if u_info:
+                    target_username = u_info.get("username") or ""
+                    target_name = u_info.get("first_name") or ""
+            elif raw_target.startswith("@") or len(raw_target) >= 3:
+                u_info = await db.find_user_by_query(raw_target)
+                if u_info:
+                    target_id = u_info.get("telegram_id")
+                    target_username = u_info.get("username") or ""
+                    target_name = u_info.get("first_name") or ""
+                else:
+                    await update.message.reply_text(
+                        f"❌ کاربری با مشخصات <code>{raw_target}</code> در دیتابیس ربات یافت نشد.\n\n"
+                        "💡 لطفاً <b>شناسه عددی تلگرام (Telegram ID)</b> کاربر را وارد فرمایید.\n"
+                        "(برای انصراف: <code>/cancel</code>)",
+                        parse_mode=ParseMode.HTML
+                    )
+                    return True
+
+        if not target_id:
+            await update.message.reply_text(
+                "⚠️ لطفاً یک شناسه عددی تلگرام معتبر ارسال کنید یا پیامی از کاربر فوروارد فرمایید.\n"
+                "(برای انصراف: <code>/cancel</code>)"
+            )
+            return True
+
+        # Check if already admin
+        if db.is_admin(target_id):
+            ADMIN_STATES.pop(user_id, None)
+            await update.message.reply_text(
+                f"ℹ️ کاربر <b>{target_name or 'مدیر'}</b> (<code>{target_id}</code>) در حال حاضر مدیر فعال ربات می‌باشد!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("👥 بازگشت به لیست مدیران", callback_data="admin_manage_admins")],
+                    [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+                ]),
+                parse_mode=ParseMode.HTML
+            )
+            return True
+
+        # Add admin
+        await db.add_admin(target_id, target_username, target_name, added_by=user_id)
+        ADMIN_STATES.pop(user_id, None)
+
+        # Set admin commands for newly promoted admin
+        admin_commands = [
+            BotCommand("start", "🚀 منوی اصلی و شروع مجدد (Restart)"),
+            BotCommand("admin", "⚙️ پنل مدیریت هوشمند ربات"),
+            BotCommand("delpin", "🗑 حذف و ابطال اشتراک کاربر"),
+            BotCommand("plans", "🛒 خرید اشتراک جدید"),
+            BotCommand("test", "🎁 دریافت اشتراک تست رایگان (۱ روزه)"),
+            BotCommand("renew", "🔄 تمدید و شارژ اشتراک"),
+            BotCommand("status", "📊 استعلام وضعیت اشتراک من"),
+            BotCommand("download", "📥 دانلود نرم‌افزار اندروید"),
+            BotCommand("support", "💬 پشتیبانی ۲۴ ساعته")
+        ]
+        try:
+            await context.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=target_id))
+            await context.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=target_id), language_code="fa")
+        except Exception as e:
+            logger.warning(f"Failed to set admin commands for {target_id}: {e}")
+
+        # Send notification to new admin and upgrade their reply keyboard
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=(
+                    "🎉 <b>تبریک! دسترسی مدیریت ربات آسان وی‌پی‌ان به شما اعطا گردید.</b> 🛡️⚡\n\n"
+                    "از هم‌اکنون دکمه «⚙️ پنل مدیریت هوشمند ربات» در منوی اصلی شما فعال شد و می‌توانید با ارسال دستور <code>/admin</code> نیز به بخش مدیریت دسترسی داشته باشید."
+                ),
+                reply_markup=get_main_keyboard(target_id),
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.info(f"Could not reach user {target_id} to send promo notification: {e}")
+
+        # Notify other admins
+        actor_name = update.effective_user.first_name or str(user_id)
+        alert_msg = (
+            "🔔 <b>#افزودن_مدیر_جدید</b>\n\n"
+            f"👤 <b>مدیر اقدام‌کننده:</b> {actor_name} (<code>{user_id}</code>)\n"
+            f"➕ <b>مدیر جدید:</b> {target_name or 'بدون نام'} (@{target_username or 'ندارد'} | <code>{target_id}</code>)"
+        )
+        await notify_admins(context, alert_msg)
+
+        # Confirm to current admin
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 بازگشت به لیست مدیران", callback_data="admin_manage_admins")],
+            [InlineKeyboardButton("⚙️ پنل مدیریت", callback_data="admin_dashboard")]
+        ])
+        await update.message.reply_text(
+            f"✅ <b>کاربر {target_name or 'جدید'} با موفقیت به مدیران ربات اضافه شد!</b>\n\n"
+            f"🆔 <b>شناسه تلگرام:</b> <code>{target_id}</code>\n"
+            f"👤 <b>یوزرنیم:</b> @{target_username or 'ندارد'}\n\n"
+            "دکمه پنل مدیریت و دسترسی‌های کامل ادمین برای ایشان فعال گردید.",
+            reply_markup=kb,
+            parse_mode=ParseMode.HTML
+        )
         return True
 
     # 1. Edit Plan Price
@@ -2367,10 +2723,18 @@ async def text_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # 8. Admin panel
-    if ("مدیریت" in clean or raw_text.startswith("/admin")) and is_admin(user_id):
-        USER_STATES.pop(user_id, None)
-        await show_admin_dashboard(update, context)
-        return
+    if "مدیریت" in clean or raw_text.startswith("/admin"):
+        if is_admin(user_id):
+            USER_STATES.pop(user_id, None)
+            ADMIN_STATES.pop(user_id, None)
+            await show_admin_dashboard(update, context)
+            return
+        else:
+            await update.message.reply_text(
+                "⛔ دسترسی غیرمجاز: شما اجازه دسترسی به پنل مدیریت را ندارید.",
+                reply_markup=get_main_keyboard(user_id)
+            )
+            return
 
     # 9. Handle numeric input (8-digit PIN)
     digits_only = re.sub(r'\D', '', raw_text)
@@ -2470,7 +2834,7 @@ async def setup_bot_commands(application: Application):
         BotCommand("download", "📥 دانلود نرم‌افزار اندروید"),
         BotCommand("support", "💬 پشتیبانی ۲۴ ساعته")
     ]
-    for aid in (set(ADMIN_IDS) | {93795023}):
+    for aid in db.get_admin_ids():
         try:
             await application.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=aid))
             await application.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=aid), language_code="fa")
@@ -2479,7 +2843,7 @@ async def setup_bot_commands(application: Application):
 
     try:
         await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
-        for aid in (set(ADMIN_IDS) | {93795023}):
+        for aid in db.get_admin_ids():
             try:
                 await application.bot.set_chat_menu_button(chat_id=aid, menu_button=MenuButtonCommands())
             except Exception:
