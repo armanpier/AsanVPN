@@ -15,7 +15,15 @@ export function getAdminDashboardHtml() {
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap');
-    body {
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      overflow-x: hidden;
+      width: 100%;
+      max-width: 100vw;
+      margin: 0;
+      padding: 0;
       font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: #0B1120;
       color: #F8FAFC;
@@ -23,6 +31,7 @@ export function getAdminDashboardHtml() {
     .glass-card {
       background: rgba(30, 41, 59, 0.7);
       backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
     .panel-card-hover:hover {
@@ -30,19 +39,110 @@ export function getAdminDashboardHtml() {
       transform: translateY(-2px);
       transition: all 0.2s ease-in-out;
     }
+
+    /* Professional Responsive Modal Architecture */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem;
+      background: rgba(2, 6, 23, 0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+    }
+    .modal-backdrop.hidden {
+      display: none !important;
+    }
+    .modal-card {
+      width: 100%;
+      max-width: 36rem;
+      margin: auto;
+      max-height: 90vh;
+      max-height: 90dvh;
+      display: flex;
+      flex-direction: column;
+      border-radius: 1.25rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(15, 23, 42, 0.96);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+      overflow: hidden;
+    }
+    @media (max-width: 640px) {
+      .modal-backdrop {
+        padding: 0.5rem;
+        align-items: center;
+      }
+      .modal-card {
+        max-width: 100% !important;
+        max-height: 94dvh !important;
+        border-radius: 1.25rem;
+      }
+    }
+    .modal-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: rgba(30, 41, 59, 0.7);
+    }
+    .modal-body {
+      padding: 1rem 1.25rem;
+      overflow-y: auto;
+      overflow-x: hidden;
+      flex: 1 1 auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+    .modal-footer {
+      padding: 0.85rem 1.25rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-shrink: 0;
+      background: rgba(30, 41, 59, 0.8);
+      flex-wrap: wrap;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.4);
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(99, 102, 241, 0.7);
+    }
   </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
 
   <!-- LOGIN OVERLAY -->
-  <div id="login-modal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
-    <div class="glass-card w-full max-w-md p-8 rounded-2xl shadow-2xl border border-slate-800">
+  <div id="login-modal" class="modal-backdrop">
+    <div class="glass-card modal-card max-w-md p-6 sm:p-8">
       <div class="text-center mb-6">
         <div class="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-400 text-3xl">
           <i class="fa-solid fa-shield-halved"></i>
         </div>
-        <h1 class="text-2xl font-bold tracking-tight text-white">ورود به پنل مدیریت آسان وی‌پی‌ان</h1>
-        <p class="text-sm text-slate-400 mt-1">رمز عبور یا توکن ادمین خود را وارد نمایید</p>
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-white">ورود به پنل مدیریت آسان وی‌پی‌ان</h1>
+        <p class="text-xs sm:text-sm text-slate-400 mt-1">رمز عبور یا توکن ادمین خود را وارد نمایید</p>
       </div>
       <div class="space-y-4">
         <div>
@@ -62,7 +162,7 @@ export function getAdminDashboardHtml() {
         <div class="mt-4 pt-4 border-t border-slate-800 text-center">
           <a href="/download" download="AsanVPN.apk" class="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 hover:underline">
             <i class="fa-solid fa-cloud-arrow-down text-sm"></i>
-            <span>دانلود مستقیم اپلیکیشن اندروید (AsanVPN.apk - نسخه ۱.۲.۰ Neumorphic)</span>
+            <span>دانلود مستقیم اپلیکیشن اندروید (نسخه ۱.۳.۰)</span>
           </a>
         </div>
       </div>
@@ -70,28 +170,28 @@ export function getAdminDashboardHtml() {
   </div>
 
   <!-- MAIN APP CONTAINER -->
-  <div id="dashboard-app" class="hidden flex-1 flex flex-col">
+  <div id="dashboard-app" class="hidden flex-1 flex flex-col min-w-0 max-w-full overflow-x-hidden">
     <!-- TOP NAVIGATION -->
-    <header class="glass-card sticky top-0 z-40 border-b border-slate-800 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-6">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-center justify-center text-emerald-400 text-xl font-bold">
+    <header class="glass-card sticky top-0 z-40 border-b border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5">
+      <div class="flex items-center gap-3 sm:gap-6">
+        <div class="flex items-center gap-2 sm:gap-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-500/20 border border-emerald-500/30 rounded-xl flex items-center justify-center text-emerald-400 text-lg sm:text-xl font-bold shrink-0">
             <i class="fa-solid fa-bolt"></i>
           </div>
           <div>
-            <h2 class="font-bold text-lg leading-tight">آسان وی‌پی‌ان</h2>
-            <span class="text-xs text-emerald-400 flex items-center gap-1">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              سامانه ابری کلودفلر آنلاین
+            <h2 class="font-bold text-sm sm:text-lg leading-tight">آسان وی‌پی‌ان</h2>
+            <span class="text-[10px] sm:text-xs text-emerald-400 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              سامانه ابری کلودفلر
             </span>
           </div>
         </div>
 
-        <!-- MAIN NAVIGATION TABS -->
+        <!-- MAIN NAVIGATION TABS (Desktop) -->
         <div class="hidden sm:flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800">
           <button id="tab-nav-users" onclick="switchMainTab('users')" class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-600 text-white shadow-sm">
             <i class="fa-solid fa-users"></i>
-            <span>کاربران (پین ۴ رقمی)</span>
+            <span>کاربران (پین اختصاصی)</span>
             <span id="badge-nav-users" class="bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full">0</span>
           </button>
           <button id="tab-nav-panels" onclick="switchMainTab('panels')" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2">
@@ -103,38 +203,40 @@ export function getAdminDashboardHtml() {
       </div>
 
       <!-- ACTION BUTTONS -->
-      <div class="flex items-center gap-2.5">
-        <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۲.۰)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center gap-2">
+      <div class="flex items-center flex-wrap gap-1.5 sm:gap-2">
+        <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۳.۰)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-download"></i>
           <span class="hidden md:inline">دانلود APK</span>
         </a>
-        <button onclick="syncAllPanels()" id="sync-all-btn" title="همگام‌سازی فوری با تمامی پنل‌ها" class="bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium px-3.5 py-2.5 rounded-xl transition flex items-center gap-2">
+        <button onclick="syncAllPanels()" id="sync-all-btn" title="همگام‌سازی فوری با تمامی پنل‌ها" class="bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i id="sync-all-icon" class="fa-solid fa-arrows-rotate"></i>
           <span class="hidden md:inline">همگام‌سازی پنل‌ها</span>
         </button>
-        <button onclick="triggerMergeDuplicates()" id="merge-dups-btn" title="ادغام کاربران همنام در چند پنل (ترکیب اشتراک‌ها)" class="bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-medium px-3.5 py-2.5 rounded-xl transition flex items-center gap-2">
+        <button onclick="triggerMergeDuplicates()" id="merge-dups-btn" title="ادغام کاربران همنام در چند پنل (ترکیب اشتراک‌ها)" class="bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-code-merge"></i>
           <span class="hidden lg:inline">ادغام همنام‌ها</span>
         </button>
-        <button onclick="triggerMigrateTo8Pin()" id="migrate-8pin-btn" title="تبدیل تمام کدهای قدیمی به ۸ رقمی امن" class="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-xs font-medium px-3.5 py-2.5 rounded-xl transition flex items-center gap-2">
+        <button onclick="triggerMigrateTo8Pin()" id="migrate-8pin-btn" title="تبدیل تمام کدهای قدیمی به ۸ رقمی امن" class="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-shield-halved"></i>
-          <span class="hidden lg:inline">تبدیل به ۸ رقمی امن</span>
+          <span class="hidden lg:inline">تبدیل ۸ رقمی</span>
         </button>
-        <button onclick="openAddPanelModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-lg shadow-blue-900/20 transition flex items-center gap-2">
+        <button onclick="openAddPanelModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl shadow-lg shadow-blue-900/20 transition flex items-center gap-1">
           <i class="fa-solid fa-plus"></i>
-          <span>افزودن پنل پروکسی</span>
+          <span class="hidden sm:inline">افزودن پنل</span>
+          <span class="sm:hidden">پنل +</span>
         </button>
-        <button onclick="openCreateModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-lg shadow-emerald-900/20 transition flex items-center gap-2">
+        <button onclick="openCreateModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl shadow-lg shadow-emerald-900/20 transition flex items-center gap-1">
           <i class="fa-solid fa-user-plus"></i>
-          <span>کاربر جدید</span>
+          <span class="hidden sm:inline">کاربر جدید</span>
+          <span class="sm:hidden">کاربر +</span>
         </button>
-        <button onclick="openMigrationModal()" title="انتقال دامنه یا پنل" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs p-2.5 rounded-xl transition">
+        <button onclick="openMigrationModal()" title="انتقال دامنه یا پنل" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs p-1.5 sm:p-2 rounded-xl transition">
           <i class="fa-solid fa-shuffle"></i>
         </button>
-        <button onclick="openChangePasswordModal()" title="تغییر رمز عبور مدیریت" class="bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs p-2.5 rounded-xl transition">
+        <button onclick="openChangePasswordModal()" title="تغییر رمز عبور مدیریت" class="bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs p-1.5 sm:p-2 rounded-xl transition">
           <i class="fa-solid fa-key"></i>
         </button>
-        <button onclick="handleLogout()" title="خروج" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-2.5 rounded-xl transition">
+        <button onclick="handleLogout()" title="خروج" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-1.5 sm:p-2 rounded-xl transition">
           <i class="fa-solid fa-arrow-right-from-bracket"></i>
         </button>
       </div>
@@ -142,12 +244,17 @@ export function getAdminDashboardHtml() {
 
     <!-- MOBILE NAVIGATION TABS -->
     <div class="sm:hidden flex items-center justify-around bg-slate-900 border-b border-slate-800 p-2">
-      <button onclick="switchMainTab('users')" id="tab-nav-users-mob" class="text-xs font-bold py-1.5 px-3 rounded-lg text-emerald-400 bg-emerald-500/10">
-        <i class="fa-solid fa-users ml-1"></i> کاربران
+      <button onclick="switchMainTab('users')" id="tab-nav-users-mob" class="text-xs font-bold py-1.5 px-3 rounded-lg text-emerald-400 bg-emerald-500/10 flex items-center gap-1.5">
+        <i class="fa-solid fa-users"></i>
+        <span>کاربران</span>
+        <span id="badge-nav-users-mob" class="bg-emerald-500/20 text-[10px] px-1.5 py-0.2 rounded-full font-mono">0</span>
       </button>
-      <button onclick="switchMainTab('panels')" id="tab-nav-panels-mob" class="text-xs font-medium py-1.5 px-3 rounded-lg text-slate-400">
-        <i class="fa-solid fa-server ml-1"></i> پنل‌های پروکسی
+      <button onclick="switchMainTab('panels')" id="tab-nav-panels-mob" class="text-xs font-medium py-1.5 px-3 rounded-lg text-slate-400 flex items-center gap-1.5">
+        <i class="fa-solid fa-server"></i>
+        <span>پنل‌های پروکسی</span>
+        <span id="badge-nav-panels-mob" class="bg-indigo-500/20 text-indigo-300 text-[10px] px-1.5 py-0.2 rounded-full font-mono">0</span>
       </button>
+    </div>
     </div>
 
     <!-- MAIN CONTENT AREA -->
@@ -279,23 +386,23 @@ export function getAdminDashboardHtml() {
   <!-- ========================================== -->
   <!-- MODAL: ADD / EDIT PROXY PANEL -->
   <!-- ========================================== -->
-  <div id="panel-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="glass-card w-full max-w-xl p-6 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <div>
-          <h3 id="panel-modal-title" class="font-bold text-lg text-white">افزودن پنل پروکسی جدید</h3>
-          <p class="text-xs text-slate-400 mt-0.5">اتصال مستقیم به API پنل‌های PasarGuard, 3X-UI, Marzban, Hiddify</p>
+  <div id="panel-modal" class="hidden modal-backdrop">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <div class="min-w-0 pr-1">
+          <h3 id="panel-modal-title" class="font-bold text-base sm:text-lg text-white truncate">افزودن پنل پروکسی جدید</h3>
+          <p class="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate">اتصال مستقیم به API پنل‌های PasarGuard, 3X-UI, Marzban, Hiddify</p>
         </div>
-        <button onclick="closeModal('panel-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+        <button onclick="closeModal('panel-modal')" type="button" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button>
       </div>
 
       <input type="hidden" id="panel-form-id">
 
-      <div class="space-y-4 text-sm">
+      <div class="modal-body space-y-4 text-sm custom-scrollbar">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="sm:col-span-1">
             <label class="block text-xs text-slate-300 mb-1">نام پنل (جهت شناسایی)</label>
-            <input type="text" id="panel-form-name" placeholder="مثال: سرور آلمان ۳X-UI" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none">
+            <input type="text" id="panel-form-name" placeholder="مثال: سرور آلمان ۳X-UI" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-slate-100">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">نوع پنل</label>
@@ -340,14 +447,14 @@ export function getAdminDashboardHtml() {
         </div>
       </div>
 
-      <div class="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
-        <button onclick="testPanelFormConnection()" type="button" class="bg-slate-800 hover:bg-slate-700 text-indigo-400 px-4 py-2.5 rounded-xl text-xs font-medium transition flex items-center gap-2">
+      <div class="modal-footer">
+        <button onclick="testPanelFormConnection()" type="button" class="bg-slate-800 hover:bg-slate-700 text-indigo-400 px-3.5 py-2 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
           <i class="fa-solid fa-bolt"></i>
           <span>تست اتصال زنده</span>
         </button>
         <div class="flex items-center gap-2">
-          <button onclick="closeModal('panel-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2.5 rounded-xl text-xs text-slate-300">انصراف</button>
-          <button onclick="savePanelForm()" type="button" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30 flex items-center gap-2">
+          <button onclick="closeModal('panel-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
+          <button onclick="savePanelForm()" type="button" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30 flex items-center gap-1.5">
             <i class="fa-solid fa-cloud-arrow-up"></i>
             <span>ذخیره پنل</span>
           </button>
@@ -359,46 +466,46 @@ export function getAdminDashboardHtml() {
   <!-- ========================================== -->
   <!-- MODAL: CREATE USER (WITH PANEL AUTO-PICK) -->
   <!-- ========================================== -->
-  <div id="create-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <h3 class="font-bold text-lg text-white">ایجاد اشتراک و پین اختصاصی جدید</h3>
-        <button onclick="closeModal('create-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+  <div id="create-modal" class="hidden modal-backdrop">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3 class="font-bold text-base sm:text-lg text-white">ایجاد اشتراک و پین اختصاصی جدید</h3>
+        <button onclick="closeModal('create-modal')" type="button" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button>
       </div>
 
-      <!-- AUTO-FILL FROM CONNECTED PANEL -->
-      <div class="bg-slate-900/90 border border-indigo-500/30 rounded-xl p-3.5 space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-            <span>انتخاب مستقیم از پنل‌های متصل (سریع):</span>
-          </span>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <select id="auto-pick-panel" onchange="onAutoPickPanelChange()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-            <option value="">-- انتخاب پنل سرور --</option>
-          </select>
-          <select id="auto-pick-user" onchange="onAutoPickUserChange()" disabled class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-            <option value="">-- انتخاب کاربر از پنل --</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="space-y-3 text-sm">
-        <div>
-          <label class="block text-xs text-slate-300 mb-1">نام یا مشخصات کاربر</label>
-          <input type="text" id="new-user-name" placeholder="مثال: علی رضایی" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none">
+      <div class="modal-body space-y-4 text-sm custom-scrollbar">
+        <!-- AUTO-FILL FROM CONNECTED PANEL -->
+        <div class="bg-slate-900/90 border border-indigo-500/30 rounded-xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>انتخاب مستقیم از پنل‌های متصل (سریع):</span>
+            </span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <select id="auto-pick-panel" onchange="onAutoPickPanelChange()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+              <option value="">-- انتخاب پنل سرور --</option>
+            </select>
+            <select id="auto-pick-user" onchange="onAutoPickUserChange()" disabled class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+              <option value="">-- انتخاب کاربر از پنل --</option>
+            </select>
+          </div>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-200 mb-1.5 flex items-center justify-between">
+          <label class="block text-xs text-slate-300 mb-1">نام یا مشخصات کاربر</label>
+          <input type="text" id="new-user-name" placeholder="مثال: علی رضایی" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none text-slate-100">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-200 mb-1.5 flex flex-wrap items-center justify-between gap-1">
             <span class="flex items-center gap-1.5">
               <i class="fa-solid fa-server text-indigo-400"></i>
               <span>انتخاب پنل‌ها و کانتینرهای متصل:</span>
             </span>
-            <span class="text-[11px] text-slate-400 font-normal">ترافیک و روزها بر اساس بهترین پنل هماهنگ می‌شود</span>
+            <span class="text-[11px] text-slate-400 font-normal">ترافیک و روزها هماهنگ می‌شود</span>
           </label>
-          <div id="new-user-panels-container" class="space-y-1.5 max-h-40 overflow-y-auto p-2.5 bg-slate-900/90 border border-slate-700 rounded-xl">
+          <div id="new-user-panels-container" class="space-y-1.5 max-h-36 overflow-y-auto p-2.5 bg-slate-900/90 border border-slate-700 rounded-xl custom-scrollbar">
             <!-- Dynamically populated panel checkboxes -->
           </div>
         </div>
@@ -413,10 +520,10 @@ export function getAdminDashboardHtml() {
           </div>
         </details>
 
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-slate-300 mb-1">مدت اعتبار پیش‌فرض (روز)</label>
-            <input type="number" id="new-user-days" value="30" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none">
+            <input type="number" id="new-user-days" value="30" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none text-slate-100">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">کد ۸ رقمی امن (اختیاری)</label>
@@ -432,7 +539,7 @@ export function getAdminDashboardHtml() {
             </span>
             <span class="text-[11px] text-slate-400 font-normal">۰ یا منفی = نامحدود</span>
           </label>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <input type="number" id="new-max-devices" value="1" min="0" placeholder="1" class="w-20 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-center font-mono text-sm focus:border-emerald-500 outline-none text-emerald-400 font-bold">
             <div class="flex items-center gap-1 flex-wrap">
               <button type="button" onclick="setMaxDevicesPreset('new-max-devices', 1)" class="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition">۱ گوشی</button>
@@ -444,39 +551,45 @@ export function getAdminDashboardHtml() {
           </div>
         </div>
       </div>
-      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
-        <button onclick="closeModal('create-modal')" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
-        <button onclick="submitCreateUser()" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-emerald-900/30">ایجاد اشتراک و دریافت پین</button>
+
+      <div class="modal-footer justify-end">
+        <button onclick="closeModal('create-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
+        <button onclick="submitCreateUser()" type="button" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-emerald-900/30 flex items-center gap-1.5">
+          <i class="fa-solid fa-user-plus"></i>
+          <span>ایجاد اشتراک و دریافت پین</span>
+        </button>
       </div>
     </div>
   </div>
 
   <!-- MODAL: EDIT USER -->
-  <div id="edit-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <div>
-          <h3 class="font-bold text-lg text-white">ویرایش مشخصات کاربر</h3>
+  <div id="edit-modal" class="hidden modal-backdrop">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <div class="min-w-0 pr-1">
+          <h3 class="font-bold text-base sm:text-lg text-white">ویرایش مشخصات کاربر</h3>
           <p class="text-xs text-emerald-400 font-mono mt-0.5">پین فعال‌سازی: <span id="edit-pin-display"></span></p>
         </div>
-        <button onclick="closeModal('edit-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+        <button onclick="closeModal('edit-modal')" type="button" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button>
       </div>
+
       <input type="hidden" id="edit-pin-val">
-      <div class="space-y-3 text-sm">
+
+      <div class="modal-body space-y-4 text-sm custom-scrollbar">
         <div>
           <label class="block text-xs text-slate-300 mb-1">نام یا مشخصات خریدار</label>
-          <input type="text" id="edit-user-name" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none">
+          <input type="text" id="edit-user-name" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-slate-100">
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-200 mb-1.5 flex items-center justify-between">
+          <label class="block text-xs font-semibold text-slate-200 mb-1.5 flex flex-wrap items-center justify-between gap-1">
             <span class="flex items-center gap-1.5">
               <i class="fa-solid fa-server text-indigo-400"></i>
               <span>پنل‌ها و کانتینرهای متصل به این کاربر:</span>
             </span>
             <span class="text-[11px] text-slate-400 font-normal">ترافیک و روزها بر اساس بالاترین پنل اعمال می‌شود</span>
           </label>
-          <div id="edit-user-panels-container" class="space-y-1.5 max-h-40 overflow-y-auto p-2.5 bg-slate-900/90 border border-slate-700 rounded-xl">
+          <div id="edit-user-panels-container" class="space-y-1.5 max-h-36 overflow-y-auto p-2.5 bg-slate-900/90 border border-slate-700 rounded-xl custom-scrollbar">
             <!-- Dynamically populated panel checkboxes -->
           </div>
         </div>
@@ -491,10 +604,10 @@ export function getAdminDashboardHtml() {
           </div>
         </details>
 
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-slate-300 mb-1">تنظیم مجدد روزهای اعتبار (اختیاری)</label>
-            <input type="number" id="edit-user-days" placeholder="تعداد روز جدید..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none">
+            <input type="number" id="edit-user-days" placeholder="تعداد روز جدید..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-slate-100">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">وضعیت اشتراک</label>
@@ -513,7 +626,7 @@ export function getAdminDashboardHtml() {
             </span>
             <span id="edit-devices-status-badge" class="text-[11px] text-amber-400 font-mono"></span>
           </label>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <input type="number" id="edit-max-devices" min="0" placeholder="1" class="w-20 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-center font-mono text-sm focus:border-indigo-500 outline-none text-indigo-400 font-bold">
             <div class="flex items-center gap-1 flex-wrap">
               <button type="button" onclick="setMaxDevicesPreset('edit-max-devices', 1)" class="px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition">۱ گوشی</button>
@@ -522,34 +635,38 @@ export function getAdminDashboardHtml() {
               <button type="button" onclick="setMaxDevicesPreset('edit-max-devices', 20)" class="px-2.5 py-1 text-xs bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 rounded-lg transition font-medium">۲۰ گوشی</button>
               <button type="button" onclick="setMaxDevicesPreset('edit-max-devices', 0)" class="px-2.5 py-1 text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/30 rounded-lg transition font-medium">∞ نامحدود</button>
             </div>
-            <button type="button" onclick="resetEditUserDevices()" title="ریست قفل تمامی گوشی‌های این کاربر" class="mr-auto px-2.5 py-1 text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition flex items-center gap-1">
+            <button type="button" onclick="resetEditUserDevices()" title="ریست قفل تمامی گوشی‌های این کاربر" class="mr-auto px-2.5 py-1.5 text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition flex items-center gap-1">
               <i class="fa-solid fa-arrows-rotate text-[10px]"></i>
               <span>ریست دستگاه‌ها</span>
             </button>
           </div>
         </div>
       </div>
-      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
-        <button onclick="closeModal('edit-modal')" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
-        <button onclick="submitEditUser()" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30">ذخیره تغییرات</button>
+
+      <div class="modal-footer justify-end">
+        <button onclick="closeModal('edit-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
+        <button onclick="submitEditUser()" type="button" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30 flex items-center gap-1.5">
+          <i class="fa-solid fa-check"></i>
+          <span>ذخیره تغییرات</span>
+        </button>
       </div>
     </div>
   </div>
 
   <!-- MODAL: CHANGE ADMIN PASSWORD -->
-  <div id="change-password-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <h3 class="font-bold text-lg text-white flex items-center gap-2">
+  <div id="change-password-modal" class="hidden modal-backdrop">
+    <div class="glass-card modal-card max-w-md">
+      <div class="modal-header">
+        <h3 class="font-bold text-base sm:text-lg text-white flex items-center gap-2">
           <i class="fa-solid fa-key text-amber-400"></i>
           <span>تغییر رمز عبور مدیریت</span>
         </h3>
-        <button onclick="closeModal('change-password-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+        <button onclick="closeModal('change-password-modal')" type="button" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button>
       </div>
-      <p class="text-xs text-slate-400 leading-relaxed">
-        برای ارتقای امنیت پنل، رمز عبور جدیدی تعیین نمایید. پس از تغییر، رمزهای قبلی و پیش‌فرض کاملاً غیرفعال خواهند شد.
-      </p>
-      <div class="space-y-3 text-sm">
+      <div class="modal-body space-y-3 text-sm custom-scrollbar">
+        <p class="text-xs text-slate-400 leading-relaxed">
+          برای ارتقای امنیت پنل، رمز عبور جدیدی تعیین نمایید. پس از تغییر، رمزهای قبلی و پیش‌فرض کاملاً غیرفعال خواهند شد.
+        </p>
         <div>
           <label class="block text-xs text-slate-300 mb-1">رمز عبور فعلی</label>
           <input type="password" id="cp-current" placeholder="رمز عبور فعلی..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-amber-500 outline-none text-left font-mono text-xs">
@@ -563,24 +680,27 @@ export function getAdminDashboardHtml() {
           <input type="password" id="cp-confirm" placeholder="تکرار رمز عبور جدید..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-amber-500 outline-none text-left font-mono text-xs">
         </div>
       </div>
-      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
-        <button onclick="closeModal('change-password-modal')" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
-        <button onclick="submitChangePassword()" id="cp-submit-btn" class="bg-amber-600 hover:bg-amber-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-amber-900/30">ذخیره رمز جدید</button>
+      <div class="modal-footer justify-end">
+        <button onclick="closeModal('change-password-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
+        <button onclick="submitChangePassword()" type="button" id="cp-submit-btn" class="bg-amber-600 hover:bg-amber-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-amber-900/30 flex items-center gap-1.5">
+          <i class="fa-solid fa-key"></i>
+          <span>ذخیره رمز جدید</span>
+        </button>
       </div>
     </div>
   </div>
 
   <!-- MODAL: BULK DOMAIN MIGRATION -->
-  <div id="migration-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-        <h3 class="font-bold text-lg text-white">انتقال دسته جمعی دامنه یا پنل</h3>
-        <button onclick="closeModal('migration-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+  <div id="migration-modal" class="hidden modal-backdrop">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3 class="font-bold text-base sm:text-lg text-white">انتقال دسته جمعی دامنه یا پنل</h3>
+        <button onclick="closeModal('migration-modal')" type="button" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition shrink-0"><i class="fa-solid fa-xmark text-lg"></i></button>
       </div>
-      <p class="text-xs text-slate-400">
-        اگر دامنه قبلی فیلتر شده است یا سرور را به پنل جدید انتقال داده‌اید، با وارد کردن دامنه قدیم و جدید، اشتراک تمام کاربران در ۲ ثانیه بدون نیاز به تغییر پین جابجا می‌شود.
-      </p>
-      <div class="space-y-3 text-sm">
+      <div class="modal-body space-y-3 text-sm custom-scrollbar">
+        <p class="text-xs text-slate-400">
+          اگر دامنه قبلی فیلتر شده است یا سرور را به پنل جدید انتقال داده‌اید، با وارد کردن دامنه قدیم و جدید، اشتراک تمام کاربران در ۲ ثانیه بدون نیاز به تغییر پین جابجا می‌شود.
+        </p>
         <div>
           <label class="block text-xs text-slate-300 mb-1">دامنه یا آی‌پی قدیمی (Old Domain/IP)</label>
           <input type="text" id="mig-old-domain" placeholder="old-panel.example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-indigo-500 outline-none text-left font-mono text-xs">
@@ -600,9 +720,12 @@ export function getAdminDashboardHtml() {
           </select>
         </div>
       </div>
-      <div class="pt-3 border-t border-slate-800 flex justify-end gap-2">
-        <button onclick="closeModal('migration-modal')" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
-        <button onclick="submitMigration()" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30">اعمال تغییرات روی تمام کاربران</button>
+      <div class="modal-footer justify-end">
+        <button onclick="closeModal('migration-modal')" type="button" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-xs text-slate-300">انصراف</button>
+        <button onclick="submitMigration()" type="button" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-lg shadow-indigo-900/30 flex items-center gap-1.5">
+          <i class="fa-solid fa-shuffle"></i>
+          <span>اعمال تغییرات روی تمام کاربران</span>
+        </button>
       </div>
     </div>
   </div>
@@ -750,17 +873,23 @@ export function getAdminDashboardHtml() {
       const viewPanels = document.getElementById('view-panels');
       const btnUsers = document.getElementById('tab-nav-users');
       const btnPanels = document.getElementById('tab-nav-panels');
+      const mobUsers = document.getElementById('tab-nav-users-mob');
+      const mobPanels = document.getElementById('tab-nav-panels-mob');
 
       if (tab === 'users') {
         viewUsers.classList.remove('hidden');
         viewPanels.classList.add('hidden');
-        btnUsers.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-600 text-white shadow-sm';
-        btnPanels.className = 'px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2';
+        if (btnUsers) btnUsers.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-emerald-600 text-white shadow-sm';
+        if (btnPanels) btnPanels.className = 'px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2';
+        if (mobUsers) mobUsers.className = 'text-xs font-bold py-1.5 px-3 rounded-lg text-emerald-400 bg-emerald-500/10 flex items-center gap-1.5';
+        if (mobPanels) mobPanels.className = 'text-xs font-medium py-1.5 px-3 rounded-lg text-slate-400 flex items-center gap-1.5';
       } else {
         viewUsers.classList.add('hidden');
         viewPanels.classList.remove('hidden');
-        btnPanels.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-indigo-600 text-white shadow-sm';
-        btnUsers.className = 'px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2';
+        if (btnPanels) btnPanels.className = 'px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-indigo-600 text-white shadow-sm';
+        if (btnUsers) btnUsers.className = 'px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2';
+        if (mobPanels) mobPanels.className = 'text-xs font-bold py-1.5 px-3 rounded-lg text-indigo-400 bg-indigo-500/10 flex items-center gap-1.5';
+        if (mobUsers) mobUsers.className = 'text-xs font-medium py-1.5 px-3 rounded-lg text-slate-400 flex items-center gap-1.5';
         loadPanels();
       }
     }
@@ -791,6 +920,8 @@ export function getAdminDashboardHtml() {
       document.getElementById('stat-total').innerText = users.length;
       document.getElementById('badge-count').innerText = users.length + ' نفر';
       document.getElementById('badge-nav-users').innerText = users.length;
+      const mobUsersBadge = document.getElementById('badge-nav-users-mob');
+      if (mobUsersBadge) mobUsersBadge.innerText = users.length;
 
       const active = users.filter(u => u.active !== false && (!u.expires_at || u.expires_at > now)).length;
       document.getElementById('stat-active').innerText = active;
@@ -1308,6 +1439,8 @@ export function getAdminDashboardHtml() {
         cachedPanels = data.panels || [];
         renderPanels(cachedPanels);
         document.getElementById('badge-nav-panels').innerText = cachedPanels.length + ' پنل';
+        const mobPanelsBadge = document.getElementById('badge-nav-panels-mob');
+        if (mobPanelsBadge) mobPanelsBadge.innerText = cachedPanels.length;
         if (cachedUsers && cachedUsers.length > 0) {
           renderTable(cachedUsers);
         }
