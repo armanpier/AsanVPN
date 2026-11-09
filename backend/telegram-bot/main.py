@@ -1,5 +1,6 @@
 import os
 import re
+import random
 import asyncio
 import logging
 import time
@@ -246,7 +247,7 @@ async def plan_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
 
-async def create_and_send_checkout_invoice(query, plan_id: str, order_type: str = "new", target_pin: str = None):
+async def create_and_send_checkout_invoice(context: ContextTypes.DEFAULT_TYPE, query, plan_id: str, order_type: str = "new", target_pin: str = None):
     plan = await db.get_plan_by_id(plan_id)
     if not plan:
         await query.edit_message_text("❌ پلن انتخابی نامعتبر است.")
@@ -254,6 +255,46 @@ async def create_and_send_checkout_invoice(query, plan_id: str, order_type: str 
 
     price_fa = f"{plan['price_toman']:,}"
     user = query.from_user
+    prefix = "RENEW" if order_type == "renew" else "BUY"
+
+    # Admin test purchase bypass: allows admin to test robot & worker provisioning without bank payment
+    admin_bypass = await db.get_setting("admin_bypass_payment", "1")
+    if is_admin(user.id) and admin_bypass == "1":
+        await query.edit_message_text(
+            f"👑 <b>[حالت تست مدیر]</b>\n\n"
+            f"شما به عنوان ادمین ربات وارد شدید.\n"
+            f"پلن <b>«{plan['title']}»</b> بدون نیاز به پرداخت در درگاه بانکی در حال صدور و فعال‌سازی آنی در سیستم است...\n"
+            f"لطفاً چند لحظه شکیبا باشید ⏳",
+            parse_mode=ParseMode.HTML
+        )
+        fake_uid = f"ADMIN_FREE_{int(time.time())}_{random.randint(1000, 9999)}"
+        order_id = f"ADMIN_{prefix}_{user.id}_{int(time.time())}"
+
+        await db.create_order(
+            order_id=order_id,
+            telegram_id=user.id,
+            order_type=order_type,
+            plan_id=plan_id,
+            amount_toman=0,
+            hooshpay_uid=fake_uid,
+            payment_url="ADMIN_BYPASS_TEST",
+            target_pin=target_pin
+        )
+
+        order = {
+            "order_id": order_id,
+            "hooshpay_uid": fake_uid,
+            "telegram_id": user.id,
+            "order_type": order_type,
+            "plan_id": plan_id,
+            "amount_toman": 0,
+            "target_pin": target_pin
+        }
+
+        success = await fulfill_paid_order(context, order, tracking_code=f"ADMIN-FREE-{int(time.time())}")
+        if not success:
+            await query.message.reply_text("❌ خطا در فعال‌سازی آنی در ورکر کلودفلر یا پنل‌ها.")
+        return
 
     loading_msg = await query.edit_message_text(
         "⏳ در حال صدور فاکتور پرداخت هوش‌پی...\nلطفاً چند لحظه شکیبا باشید.",
@@ -372,7 +413,7 @@ async def plan_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     # If user does NOT have an active plan, proceed directly to new checkout
-    await create_and_send_checkout_invoice(query, plan_id, order_type="new", target_pin=None)
+    await create_and_send_checkout_invoice(context, query, plan_id, order_type="new", target_pin=None)
 
 async def choose_plan_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -384,9 +425,9 @@ async def choose_plan_action_callback(update: Update, context: ContextTypes.DEFA
     target_pin = parts[3] if len(parts) > 3 else None
 
     if action == "renew" and target_pin:
-        await create_and_send_checkout_invoice(query, plan_id, order_type="renew", target_pin=target_pin)
+        await create_and_send_checkout_invoice(context, query, plan_id, order_type="renew", target_pin=target_pin)
     else:
-        await create_and_send_checkout_invoice(query, plan_id, order_type="new", target_pin=None)
+        await create_and_send_checkout_invoice(context, query, plan_id, order_type="new", target_pin=None)
 
 # ----------------- USER FLOW: RENEWAL -----------------
 
@@ -511,68 +552,7 @@ async def renew_option_callback(update: Update, context: ContextTypes.DEFAULT_TY
     parts = query.data.split(":")
     pin = parts[1]
     plan_id = parts[2]
-    plan = await db.get_plan_by_id(plan_id)
-
-    if not plan:
-        await query.edit_message_text("❌ گزینه انتخابی نامعتبر است.")
-        return
-
-    user = query.from_user
-    price_fa = f"{plan['price_toman']:,}"
-
-    loading_msg = await query.edit_message_text(
-        "⏳ در حال صدور فاکتور تمدید هوش‌پی...\nلطفاً چند لحظه شکیبا باشید.",
-        parse_mode=ParseMode.HTML
-    )
-
-    order_id = f"RENEW_{pin}_{int(time.time())}"
-    desc = f"تمدید اشتراک {pin} آسان وی‌پی‌ان ({plan['title']})"
-
-    invoice = await hooshpay.create_invoice(
-        amount_toman=plan["price_toman"],
-        order_id=order_id,
-        description=desc
-    )
-
-    if not invoice or not invoice.get("payment_url"):
-        await loading_msg.edit_text(
-            "⚠️ خطا در ایجاد درگاه تمدید هوش‌پی.\nلطفاً دوباره امتحان کنید.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_plans")]
-            ])
-        )
-        return
-
-    uid = invoice["uid"]
-    payment_url = invoice["payment_url"]
-
-    await db.create_order(
-        order_id=order_id,
-        telegram_id=user.id,
-        order_type="renew",
-        target_pin=pin,
-        plan_id=plan_id,
-        amount_toman=plan["price_toman"],
-        hooshpay_uid=uid,
-        payment_url=payment_url
-    )
-
-    msg_text = (
-        f"🧾 <b>پیش‌فاکتور تمدید اشتراک</b>\n\n"
-        f"🔑 <b>کد اشتراک هدف:</b> <code>{pin}</code>\n"
-        f"📦 <b>بسته تمدید:</b> {plan['title']}\n"
-        f"⏳ <b>مدت افزایش:</b> {plan['days']} روز اضافه\n"
-        f"💰 <b>مبلغ قابل پرداخت:</b> {price_fa} تومان\n\n"
-        "💳 جهت تکمیل، دکمه <b>«پرداخت آنلاین»</b> را لمس کنید و پس از پرداخت به ربات بازگشته و <b>«بررسی پرداخت»</b> را بزنید:"
-    )
-
-    pay_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 پرداخت آنلاین (هوش‌پی)", url=payment_url)],
-        [InlineKeyboardButton("🔄 بررسی وضعیت پرداخت و اعمال تمدید", callback_data=f"verify_order:{uid}")],
-        [InlineKeyboardButton("❌ انصراف", callback_data="cancel_order")]
-    ])
-
-    await loading_msg.edit_text(msg_text, reply_markup=pay_keyboard, parse_mode=ParseMode.HTML)
+    await create_and_send_checkout_invoice(context, query, plan_id, order_type="renew", target_pin=pin)
 
 # ----------------- PAYMENT FULFILLMENT & NOTIFICATIONS -----------------
 
@@ -594,6 +574,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
     order_type = order.get("order_type", "new")
     app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    is_admin_test = str(tracking_code).startswith("ADMIN-")
 
     plan = await db.get_plan_by_id(order.get("plan_id"))
     days = plan["days"] if plan else 30
@@ -623,7 +604,23 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
         total_traffic_bytes = res.get("traffic_total_bytes", 0)
         total_traffic_gb = round(total_traffic_bytes / (1024**3), 1) if total_traffic_bytes else traffic_gb
 
-        if is_unexpired_upgrade:
+        if is_admin_test:
+            success_text = (
+                "👑 <b>[تست مدیر] شارژ و ارتقای تجمعی اشتراک شما!</b>\n\n"
+                f"اشتراک فعال شما با کد <code>{target_pin}</code> به صورت آزمایشی (بدون نیاز به پرداخت درگاه) شارژ و تمدید گردید:\n\n"
+                f"🔑 <b>کد اشتراک شما:</b>\n"
+                f"👉  <code>{target_pin}</code>  👈\n"
+                "<i>(برای کپی، کافیست روی کد بالا ضربه بزنید)</i>\n\n"
+                f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={target_pin}\"><b>کلیک کنید تا برنامه آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
+                f"➕ <b>حجم اضافه شده:</b> {traffic_gb} گیگابایت\n"
+                f"➕ <b>اعتبار زمانی اضافه شده:</b> {days} روز\n"
+                f"📊 <b>مجموع کل حجم اشتراک:</b> {total_traffic_gb} گیگابایت\n"
+                f"⏳ <b>تاریخ انقضای جدید:</b> {exp_str}\n\n"
+                "📱 <b>راهنمای اتصال:</b>\n"
+                "حجم و زمان تستی بلافاصله در سیستم ثبت شد و در برنامه بدون نیاز به تغییر کد فعال است!\n\n"
+                f"🧾 <b>شناسه سفارش تستی:</b> <code>{tracking_code}</code>"
+            )
+        elif is_unexpired_upgrade:
             success_text = (
                 "🎉 <b>شارژ و ارتقای تجمعی اشتراک شما!</b>\n\n"
                 f"اشتراک فعال شما با کد <code>{target_pin}</code> هنوز منقضی نشده بود؛ بنابراین حجم و روزهای پلن جدید به صورت <b>تجمعی</b> به اشتراک فعلی شما افزوده شد:\n\n"
@@ -671,14 +668,15 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
             logger.error(f"Failed to send success msg to {telegram_id}: {e}")
 
         # Notify Admin
+        admin_tag = "<b>#تمدید_تستی_مدیر (بدون پرداخت)</b>" if is_admin_test else "<b>#تمدید_تجمعی_اشتراک</b>"
         admin_alert = (
-            "🔔 <b>#تمدید_تجمعی_اشتراک</b>\n\n"
-            f"👤 <b>کاربر:</b> <code>{telegram_id}</code>\n"
+            f"🔔 {admin_tag}\n\n"
+            f"👤 <b>کاربر (ادمین):</b> <code>{telegram_id}</code>\n"
             f"📦 <b>پلن:</b> {plan_title} ({traffic_gb}GB, {days} روز)\n"
             f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان\n"
             f"🔑 <b>کد اشتراک شارژ شده:</b> <code>{target_pin}</code>\n"
             f"📊 <b>مجموع حجم جدید:</b> {total_traffic_gb} گیگابایت\n"
-            f"🧾 <b>کد پیگیری هوش‌پی:</b> <code>{tracking_code}</code>"
+            f"🧾 <b>شناسه پیگیری:</b> <code>{tracking_code}</code>"
         )
         await notify_admins(context, admin_alert)
         return True
@@ -701,22 +699,39 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
         await db.mark_order_paid(uid, tracking_code, assigned_pin=pin)
 
         # Notify buyer
-        success_text = (
-            "🎉 <b>پرداخت شما با موفقیت تایید شد!</b>\n\n"
-            "🔑 <b>کد اختصاصی اشتراک شما:</b>\n\n"
-            f"👉  <code>{pin}</code>  👈\n\n"
-            "👆 <i>(برای کپی کردن، کافیست روی کد بالا ضربه بزنید)</i>\n\n"
-            f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
-            f"📊 <b>حجم ترافیک:</b> {traffic_gb} گیگابایت\n"
-            f"⏳ <b>مدت اعتبار:</b> {days} روز\n\n"
-            "📱 <b>راهنمای اتصال سریع:</b>\n"
-            "۱. دکمه «اتصال و فعال‌سازی مستقیم در برنامه» زیر را لمس نمایید تا برنامه خودکار باز شود.\n"
-            f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد ۸ رقمی <code>{pin}</code> را وارد فرمایید.\n"
-            "۳. دکمه اتصال را لمس کنید تا به بهترین سرور متصل شوید!\n\n"
-            "🔒 <b>امنیت و قفل دستگاه:</b> این اشتراک برای ۲ دستگاه (۲ گوشی همزمان) فعال بوده و بر روی دو دستگاه اول متصل‌شده قفل می‌گردد.\n\n"
-            f"🧾 <b>کد رهگیری تراکنش هوش‌پی:</b> <code>{tracking_code}</code>\n"
-            "🙏 از خرید و اعتماد شما سپاسگزاریم."
-        )
+        if is_admin_test:
+            success_text = (
+                "👑 <b>[تست مدیر] اشتراک آزمایشی شما بدون نیاز به پرداخت فعال شد!</b>\n\n"
+                "🔑 <b>کد اختصاصی اشتراک شما:</b>\n\n"
+                f"👉  <code>{pin}</code>  👈\n\n"
+                "👆 <i>(برای کپی کردن، کافیست روی کد بالا ضربه بزنید)</i>\n\n"
+                f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
+                f"📊 <b>حجم ترافیک:</b> {traffic_gb} گیگابایت\n"
+                f"⏳ <b>مدت اعتبار:</b> {days} روز\n\n"
+                "📱 <b>راهنمای اتصال سریع:</b>\n"
+                "۱. دکمه «اتصال و فعال‌سازی مستقیم در برنامه» زیر را لمس نمایید تا برنامه خودکار باز شود.\n"
+                f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد ۸ رقمی <code>{pin}</code> را وارد فرمایید.\n"
+                "۳. دکمه اتصال را لمس کنید تا به بهترین سرور متصل شوید!\n\n"
+                "🔒 <b>امنیت و قفل دستگاه:</b> اشتراک تستی برای ۲ دستگاه همزمان فعال بوده و بر روی دو دستگاه اول متصل‌شده قفل می‌گردد.\n\n"
+                f"🧾 <b>شناسه سفارش تستی:</b> <code>{tracking_code}</code>"
+            )
+        else:
+            success_text = (
+                "🎉 <b>پرداخت شما با موفقیت تایید شد!</b>\n\n"
+                "🔑 <b>کد اختصاصی اشتراک شما:</b>\n\n"
+                f"👉  <code>{pin}</code>  👈\n\n"
+                "👆 <i>(برای کپی کردن، کافیست روی کد بالا ضربه بزنید)</i>\n\n"
+                f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
+                f"📊 <b>حجم ترافیک:</b> {traffic_gb} گیگابایت\n"
+                f"⏳ <b>مدت اعتبار:</b> {days} روز\n\n"
+                "📱 <b>راهنمای اتصال سریع:</b>\n"
+                "۱. دکمه «اتصال و فعال‌سازی مستقیم در برنامه» زیر را لمس نمایید تا برنامه خودکار باز شود.\n"
+                f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد ۸ رقمی <code>{pin}</code> را وارد فرمایید.\n"
+                "۳. دکمه اتصال را لمس کنید تا به بهترین سرور متصل شوید!\n\n"
+                "🔒 <b>امنیت و قفل دستگاه:</b> این اشتراک برای ۲ دستگاه (۲ گوشی همزمان) فعال بوده و بر روی دو دستگاه اول متصل‌شده قفل می‌گردد.\n\n"
+                f"🧾 <b>کد رهگیری تراکنش هوش‌پی:</b> <code>{tracking_code}</code>\n"
+                "🙏 از خرید و اعتماد شما سپاسگزاریم."
+            )
 
         try:
             await context.bot.send_message(
@@ -740,14 +755,15 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
             logger.error(f"Failed to send success msg to {telegram_id}: {e}")
 
         # Notify Admin
+        admin_tag = "<b>#خرید_تستی_مدیر (بدون پرداخت)</b>" if is_admin_test else "<b>#خرید_جدید</b>"
         admin_alert = (
-            "🔔 <b>#خرید_جدید</b>\n\n"
-            f"👤 <b>کاربر:</b> <code>{telegram_id}</code>\n"
+            f"🔔 {admin_tag}\n\n"
+            f"👤 <b>کاربر (ادمین):</b> <code>{telegram_id}</code>\n"
             f"📦 <b>پلن:</b> {plan_title}\n"
-            f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان\n"
+            f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان (تست رایگان ادمین)\n"
             f"🔑 <b>کد اختصاصی صادر شده:</b> <code>{pin}</code>\n"
             f"📊 <b>حجم اختصاص داده شده:</b> {traffic_gb} گیگابایت\n"
-            f"🧾 <b>کد پیگیری هوش‌پی:</b> <code>{tracking_code}</code>"
+            f"🧾 <b>شناسه پیگیری:</b> <code>{tracking_code}</code>"
         )
         await notify_admins(context, admin_alert)
         return True
@@ -935,10 +951,12 @@ async def admin_notifications_menu(update: Update, context: ContextTypes.DEFAULT
     ns = await db.get_setting("notify_admin_on_sale", "1")
     nr = await db.get_setting("notify_admin_on_renew", "1")
     mm = await db.get_setting("maintenance_mode", "0")
+    abp = await db.get_setting("admin_bypass_payment", "1")
 
     icon_ns = "✅ روشن" if ns == "1" else "❌ خاموش"
     icon_nr = "✅ روشن" if nr == "1" else "❌ خاموش"
     icon_mm = "🔴 فعال (خرید بسته)" if mm == "1" else "🟢 غیرفعال (عادی)"
+    icon_abp = "👑 فعال (خرید فوری بدون درگاه)" if abp == "1" else "💳 غیرفعال (نیاز به پرداخت)"
 
     text = (
         "🔔 <b>تنظیمات اعلانات و حالت‌های ربات:</b>\n\n"
@@ -946,6 +964,7 @@ async def admin_notifications_menu(update: Update, context: ContextTypes.DEFAULT
     )
 
     keyboard = [
+        [InlineKeyboardButton(f"تست خرید ادمین بدون پرداخت: {icon_abp}", callback_data="toggle_admin_bypass")],
         [InlineKeyboardButton(f"اعلان خرید جدید به ادمین: {icon_ns}", callback_data="toggle_notif_sale")],
         [InlineKeyboardButton(f"اعلان تمدید به ادمین: {icon_nr}", callback_data="toggle_notif_renew")],
         [InlineKeyboardButton(f"حالت تعمیرات: {icon_mm}", callback_data="toggle_maint_mode")],
@@ -1158,6 +1177,12 @@ async def admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TY
     if data == "toggle_maint_mode":
         val = await db.get_setting("maintenance_mode", "0")
         await db.set_setting("maintenance_mode", "0" if val == "1" else "1")
+        await admin_notifications_menu(update, context)
+        return
+
+    if data == "toggle_admin_bypass":
+        val = await db.get_setting("admin_bypass_payment", "1")
+        await db.set_setting("admin_bypass_payment", "0" if val == "1" else "1")
         await admin_notifications_menu(update, context)
         return
 

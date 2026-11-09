@@ -72,7 +72,8 @@ DEFAULT_SETTINGS = {
     "notify_admin_on_sale": "1",
     "notify_admin_on_renew": "1",
     "notify_user_on_sale": "1",
-    "maintenance_mode": "0"
+    "maintenance_mode": "0",
+    "admin_bypass_payment": "1"
 }
 
 class BotDatabase:
