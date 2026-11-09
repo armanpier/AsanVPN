@@ -64,7 +64,7 @@ DEFAULT_SETTINGS = {
         "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
     ),
     "support_username": "@Sib_Support_P",
-    "app_download_url": "https://github.com/armanpier/AsanVPN/releases",
+    "app_download_url": "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk",
     "backup_channel_id": "-1004389472709",
     "auto_backup_enabled": "1",
     "auto_backup_interval_hours": "24",

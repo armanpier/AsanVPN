@@ -115,7 +115,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_template = DEFAULT_WELCOME_TEXT
 
     welcome_text = welcome_template.replace("{name}", user.first_name or "کاربر")
-    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases")
+    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
 
     inline_kb = InlineKeyboardMarkup([
@@ -592,7 +592,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
     uid = order["hooshpay_uid"]
     telegram_id = order["telegram_id"]
     order_type = order.get("order_type", "new")
-    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases")
+    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
 
     plan = await db.get_plan_by_id(order.get("plan_id"))
@@ -1462,7 +1462,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
     if query:
         await query.answer()
 
-    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases")
+    app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
 
     # 1. Determine which PIN to show
@@ -1784,49 +1784,33 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
 
     support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    universal_apk_url = "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk"
+    cdn_download_url = "https://asanvpn-worker.hi-deploy.workers.dev/download"
 
     text = (
-        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (AsanVPN)</b>\n"
+        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.2.0)</b>\n"
+        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
+        "✨ <b>طراحی مدرن سفید سه‌بعدی و آیکون جدید</b>\n"
+        "📦 <b>نسخه همگانی (Universal APK) — سازگار با ۱۰۰٪ دستگاه‌ها</b>\n\n"
+        "🔹 <b>ویژگی‌ها و مزایا:</b>\n"
+        "• <b>سازگاری کامل:</b> قابل نصب روی تمام گوشی‌ها و تبلت‌های اندروید (سامسونگ، شیائومی، هواوی، پیکسل و...)\n"
+        "• <b>بدون نیاز به انتخاب پردازنده:</b> یک فایل نصبی واحد و جامع برای همه گوشی‌ها\n"
+        "• <b>اتصال فوری با پین ۸ رقمی:</b> بدون نیاز به تنظیمات پیچیده یا فایل کانفیگ\n"
+        "• <b>پشتیبانی از دیپ‌لینک:</b> باز شدن و فعال‌سازی خودکار برنامه با یک لمس\n"
+        "• <b>هسته هوشمند ضد فیلتر:</b> پروتکل‌های پرسرعت VLESS Reality و Sing-box\n\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
-        "🚀 اینترنت آزاد، فوق‌سریع و بدون قطعی با فناوری هوشمند دور زدن فیلترینگ.\n\n"
-        "👇 <b>نسخه متناسب با گوشی خود را انتخاب و نصب فرمایید:</b>\n\n"
-        "1️⃣ <b>نسخه استاندارد (arm64-v8a) — [پیشنهادی برای ۹۵٪ کاربران] 🌟</b>\n"
-        "🔗 <a href='https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-arm64-v8a.apk'>دانلود مستقیم AsanVPN-arm64-v8a.apk (حجم ۲۸.۴ مگابایت)</a>\n"
-        "📱 <b>سازگار با:</b> تمامی گوشی‌های مدرن اندروید (تولید ۲۰۱۸ به بعد) شامل:\n"
-        "• تمامی مدل‌های سامسونگ سری Galaxy A، Galaxy S و Z\n"
-        "• تمامی مدل‌های شیائومی (Xiaomi)، ردمی (Redmi)، پوکو (Poco)\n"
-        "• گوشی‌های گوگل پیکسل (Pixel)، وان‌پلاس، آنر، هواوی و موتو\n"
-        "⚡ <i>(سرعت بالاتر، پایداری بیشتر و بهینه‌ترین مصرف باتری)</i>\n\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "2️⃣ <b>نسخه همه‌منظوره (Universal) — [سازگار با تمام گوشی‌ها] 📦</b>\n"
-        "🔗 <a href='https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-universal.apk'>دانلود مستقیم AsanVPN-universal.apk (حجم ۶۶.۲ مگابایت)</a>\n"
-        "📱 <b>سازگار با:</b> تمامی مدل‌های گوشی و تبلت بدون نیاز به دانستن نوع پردازنده.\n\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "3️⃣ <b>نسخه ۳۲ بیتی (armeabi-v7a) 📱</b>\n"
-        "🔗 <a href='https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-armeabi-v7a.apk'>دانلود مستقیم AsanVPN-armeabi-v7a.apk (حجم ۲۸.۹ مگابایت)</a>\n"
-        "📱 <b>سازگار با:</b> گوشی‌ها، تبلت‌ها و دستگاه‌های قدیمی‌تر اندرویدی.\n\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "4️⃣ <b>نسخه کامپیوتر و شبیه‌سازها (x86_64) 💻</b>\n"
-        "🔗 <a href='https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-x86_64.apk'>دانلود مستقیم AsanVPN-x86_64.apk (حجم ۲۹.۴ مگابایت)</a>\n"
-        "💻 <b>سازگار با:</b> شبیه‌سازهای اندروید ویندوز (LDPlayer 9، BlueStacks 64-bit، Nox) و پردازنده‌های Intel/AMD.\n\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "5️⃣ <b>نسخه شبیه‌ساز ۳۲ بیتی (x86) 🖥️</b>\n"
-        "🔗 <a href='https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-x86.apk'>دانلود مستقیم AsanVPN-x86.apk (حجم ۲۹.۸ مگابایت)</a>\n"
-        "🖥️ <b>سازگار با:</b> شبیه‌سازهای ۳۲ بیتی کامپیوتر.\n\n"
-        "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
-        "💡 <b>راهنمای اتصال:</b> پس از نصب، کد اختصاصی ۸ رقمی خود را در نرم‌افزار وارد کرده و روی اتصال ضربه بزنید."
+        "👇 <b>جهت دانلود و نصب، یکی از گزینه‌های زیر را انتخاب فرمایید:</b>"
     )
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📥 دانلود نسخه اصلی (arm64)", url="https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-arm64-v8a.apk", style="success"),
-            InlineKeyboardButton("📦 دانلود نسخه Universal", url="https://github.com/armanpier/AsanVPN/releases/download/v1.1.2/AsanVPN-v1.1.2-universal.apk", style="success")
+            InlineKeyboardButton("📥 دانلود نسخه همگانی (گیت‌هاب رسمی)", url=universal_apk_url, style="success")
         ],
         [
-            InlineKeyboardButton("🌐 مشاهده تمام نسخه‌ها در گیت‌هاب", url="https://github.com/armanpier/AsanVPN/releases", style="primary"),
-            InlineKeyboardButton("💬 راهنمایی و پشتیبانی", url=f"https://t.me/{support_username.lstrip('@')}", style="primary")
+            InlineKeyboardButton("⚡ دانلود از سرور پرسرعت کمکی (Cloudflare CDN)", url=cdn_download_url, style="primary")
         ],
         [
+            InlineKeyboardButton("💬 راهنمایی و پشتیبانی", url=f"https://t.me/{support_username.lstrip('@')}", style="primary"),
             InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")
         ]
     ])

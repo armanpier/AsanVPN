@@ -62,7 +62,7 @@ export function getAdminDashboardHtml() {
         <div class="mt-4 pt-4 border-t border-slate-800 text-center">
           <a href="/download" download="AsanVPN.apk" class="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 hover:underline">
             <i class="fa-solid fa-cloud-arrow-down text-sm"></i>
-            <span>دانلود مستقیم اپلیکیشن اندروید (AsanVPN.apk - نسخه ۱.۱.۲)</span>
+            <span>دانلود مستقیم اپلیکیشن اندروید (AsanVPN.apk - نسخه ۱.۲.۰ Neumorphic)</span>
           </a>
         </div>
       </div>
@@ -104,7 +104,7 @@ export function getAdminDashboardHtml() {
 
       <!-- ACTION BUTTONS -->
       <div class="flex items-center gap-2.5">
-        <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۱.۲)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center gap-2">
+        <a href="/download" download="AsanVPN.apk" title="دانلود مستقیم فایل نصبی اندروید (نسخه ۱.۲.۰)" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-3.5 py-2.5 rounded-xl transition flex items-center gap-2">
           <i class="fa-solid fa-download"></i>
           <span class="hidden md:inline">دانلود APK</span>
         </a>
