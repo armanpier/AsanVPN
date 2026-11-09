@@ -48,14 +48,72 @@ export async function fetchViaSocket(urlStr, options = {}) {
 
   const reader = socket.readable.getReader();
   const chunks = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
+  let totalLen = 0;
+  let headersParsed = false;
+  let expectedContentLength = null;
+  let isChunked = false;
+  let headerEndOffset = -1;
+
+  const readWithTimeout = (timeoutMs = 6000) => {
+    return Promise.race([
+      reader.read(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Socket read timeout')), timeoutMs))
+    ]);
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await readWithTimeout(6000);
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        totalLen += value.length;
+
+        // Parse headers as soon as available to detect end of response early
+        if (!headersParsed) {
+          const currentBytes = new Uint8Array(totalLen);
+          let off = 0;
+          for (const c of chunks) { currentBytes.set(c, off); off += c.length; }
+          const textPreview = new TextDecoder().decode(currentBytes);
+          const splitIdx = textPreview.indexOf('\r\n\r\n');
+          if (splitIdx !== -1) {
+            headersParsed = true;
+            headerEndOffset = new TextEncoder().encode(textPreview.slice(0, splitIdx + 4)).length;
+            const headersStr = textPreview.slice(0, splitIdx).toLowerCase();
+            const clMatch = headersStr.match(/content-length:\s*(\d+)/);
+            if (clMatch) {
+              expectedContentLength = parseInt(clMatch[1], 10);
+            }
+            if (headersStr.includes('transfer-encoding: chunked')) {
+              isChunked = true;
+            }
+          }
+        }
+
+        if (headersParsed) {
+          const bodyBytesLen = totalLen - headerEndOffset;
+          if (expectedContentLength !== null && bodyBytesLen >= expectedContentLength) {
+            break;
+          }
+          if (isChunked) {
+            const tailBytes = chunks[chunks.length - 1];
+            const tailText = new TextDecoder().decode(tailBytes);
+            if (tailText.endsWith('0\r\n\r\n') || tailText.includes('0\r\n\r\n')) {
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (chunks.length === 0) throw err;
+  } finally {
+    try { reader.releaseLock(); } catch (_) {}
+    try { socket.close(); } catch (_) {}
   }
 
-  const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-  const fullBytes = new Uint8Array(totalLen);
+  const finalTotalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+  const fullBytes = new Uint8Array(finalTotalLen);
   let offset = 0;
   for (const c of chunks) {
     fullBytes.set(c, offset);
@@ -1465,6 +1523,17 @@ export class PanelManager {
     const activePanels = panels.filter(p => p.autoSync !== false);
     const activePanelIds = activePanels.map(p => p.id);
 
+    // Prefetch all active panels' remote users ONCE to prevent N*M redundant HTTP network calls
+    const cachedRemoteUsersMap = {};
+    for (const panel of activePanels) {
+      try {
+        cachedRemoteUsersMap[panel.id] = await this.fetchRemoteUsers(panel);
+      } catch (e) {
+        console.warn(`Failed to prefetch remote users for panel ${panel.name}:`, e.message);
+        cachedRemoteUsersMap[panel.id] = [];
+      }
+    }
+
     const kvList = await env.VPN_USERS.list();
     let syncedCount = 0;
 
@@ -1504,7 +1573,7 @@ export class PanelManager {
 
       if (needsUpdate || !user.panel_ids || user.panel_ids.length < activePanelIds.length) {
         try {
-          user = await this.assignPanelsToUser(env, user, activePanelIds, user.upstream_sub_urls || []);
+          user = await this.assignPanelsToUser(env, user, activePanelIds, user.upstream_sub_urls || [], cachedRemoteUsersMap, false);
           await env.VPN_USERS.put(key.name, JSON.stringify(user));
           syncedCount++;
         } catch (e) {
@@ -1521,7 +1590,7 @@ export class PanelManager {
    * matches expiration to the later expiry date (higher days remained),
    * and sets panel_ids and multi-panel type.
    */
-  static async assignPanelsToUser(env, userRecord, selectedPanelIds, manualSubUrls = []) {
+  static async assignPanelsToUser(env, userRecord, selectedPanelIds, manualSubUrls = [], preloadedRemoteUsersMap = null, allowAutoCreate = true) {
     if (!selectedPanelIds || !Array.isArray(selectedPanelIds)) {
       return userRecord;
     }
@@ -1575,7 +1644,9 @@ export class PanelManager {
         } else {
           // Check if matching user already exists on the remote panel by name/username
           try {
-            const remoteUsers = await this.fetchRemoteUsers(panel);
+            const remoteUsers = (preloadedRemoteUsersMap && preloadedRemoteUsersMap[panel.id])
+              ? preloadedRemoteUsersMap[panel.id]
+              : await this.fetchRemoteUsers(panel);
             const match = remoteUsers.find(ru => {
               const rName = (ru.name || '').trim().toLowerCase();
               const rUser = (ru.username || '').trim().toLowerCase();
@@ -1601,8 +1672,8 @@ export class PanelManager {
             console.warn(`Could not fetch remote users for panel ${panel.name}:`, fetchErr.message);
           }
 
-          // If still not found on remote panel, CREATE USER ON REMOTE PANEL!
-          if (!resolvedSubUrl) {
+          // If still not found on remote panel, CREATE USER ON REMOTE PANEL (if allowed)
+          if (!resolvedSubUrl && allowAutoCreate) {
             try {
               console.log(`Auto-creating remote user on panel ${panel.name} (${panel.type}) for PIN ${userRecord.pin}...`);
               const created = await this.createRemoteUser(panel, userRecord);

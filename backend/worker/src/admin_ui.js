@@ -1959,18 +1959,24 @@ export function getAdminDashboardHtml() {
           Swal.fire({
             icon: 'success',
             title: 'همگام‌سازی همه پنل‌ها انجام شد!',
-            html: '<div class="space-y-1 text-sm">' +
+            html: '<div class="space-y-1 text-sm text-right">' +
               '<p class="text-emerald-400">کاربران جدید ایجاد شده: <b>' + (data.totalAdded || 0) + '</b></p>' +
               '<p class="text-blue-400">کاربران بروزرسانی شده: <b>' + (data.totalUpdated || 0) + '</b></p>' +
+              (data.crossSynced ? '<p class="text-purple-400">کاربران متصل به چند پنل: <b>' + data.crossSynced + '</b></p>' : '') +
               '</div>'
           });
           loadPanels();
           loadUsers();
         } else {
-          Swal.fire({ icon: 'error', title: 'خطا', text: data.error || 'خطا در همگام‌سازی' });
+          Swal.fire({ icon: 'error', title: 'خطا در همگام‌سازی', text: data.error || 'خطا در برقراری ارتباط با یکی از پنل‌ها' });
         }
       } catch (e) {
-        Swal.fire({ icon: 'error', title: 'خطا', text: e.message });
+        Swal.fire({
+          icon: 'error',
+          title: 'خطا در همگام‌سازی',
+          html: '<p class="text-sm text-rose-300 mb-2">' + (e.message || 'ارتباط با ورکر قطع شد') + '</p>' +
+                '<p class="text-xs text-slate-400 text-right">ممکن است سرور یکی از پنل‌ها موقتاً کند باشد. می‌توانید از تب «پنل‌های پروکسی» هر پنل را مستقلاً همگام نمایید.</p>'
+        });
       } finally {
         if (icon) icon.classList.remove('fa-spin');
       }

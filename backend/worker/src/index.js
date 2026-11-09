@@ -1261,13 +1261,21 @@ export default {
 
       // POST /api/v1/admin/panels/sync
       if (path === '/api/v1/admin/panels/sync' && request.method === 'POST') {
-        const body = await request.json().catch(() => ({}));
-        if (body.id) {
-          const syncRes = await PanelManager.syncPanel(env, body.id);
-          return new Response(JSON.stringify(syncRes), { headers: corsHeaders });
-        } else {
-          const syncAllRes = await PanelManager.syncAllPanels(env);
-          return new Response(JSON.stringify(syncAllRes), { headers: corsHeaders });
+        try {
+          const body = await request.json().catch(() => ({}));
+          if (body.id) {
+            const syncRes = await PanelManager.syncPanel(env, body.id);
+            return new Response(JSON.stringify(syncRes), { headers: corsHeaders });
+          } else {
+            const syncAllRes = await PanelManager.syncAllPanels(env);
+            return new Response(JSON.stringify(syncAllRes), { headers: corsHeaders });
+          }
+        } catch (syncErr) {
+          console.error('Error in /api/v1/admin/panels/sync:', syncErr);
+          return new Response(JSON.stringify({
+            success: false,
+            error: syncErr.message || 'خطا در همگام‌سازی پنل‌ها'
+          }), { status: 500, headers: corsHeaders });
         }
       }
 
