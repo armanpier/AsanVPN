@@ -1,10 +1,12 @@
 import os
 import re
+import io
 import random
 import asyncio
 import logging
 import time
 import aiosqlite
+import qrcode
 from datetime import datetime
 from telegram import (
     Update,
@@ -2600,6 +2602,22 @@ async def claim_free_test_plan(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ----------------- DOWNLOAD APP GUIDE (ALL ARCHITECTURES) -----------------
 
+def generate_download_qr(url: str) -> io.BytesIO:
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
+    bio = io.BytesIO()
+    bio.name = "asanvpn_download_qr.png"
+    img.save(bio, "PNG")
+    bio.seek(0)
+    return bio
+
 async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_query = hasattr(update, "callback_query") and update.callback_query is not None
     query = update.callback_query if is_query else None
@@ -2607,31 +2625,31 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
 
     support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
-    universal_apk_url = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.0/AsanVPN-v1.3.0-universal.apk"
+    universal_apk_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.3.5/AsanVPN-v1.3.5-universal.apk")
     cdn_download_url = "https://asanvpn-worker.hi-deploy.workers.dev/download"
 
     text = (
-        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.3.0)</b>\n"
+        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.3.5)</b>\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
         "✨ <b>طراحی مدرن سفید سه‌بعدی و آیکون رسمی جدید</b>\n"
         "📦 <b>نسخه همگانی (Universal APK) — سازگار با ۱۰۰٪ دستگاه‌ها</b>\n\n"
-        "🔹 <b>امکانات نسخه جدید v1.3.0:</b>\n"
-        "• <b>اولویت‌بندی آبشاری پنل‌ها:</b> اتصال هوشمند به پنل‌های دارای اولویت بالاتر و سوئیچ خودکار در صورت قطعی\n"
-        "• <b>تست تاخیر واقعی (Real Delay):</b> سنجش پینگ دقیق سرورها قبل از برقراری ارتباط برای تضمین حداکثر سرعت\n"
-        "• <b>به‌روزرسانی خودکار داخلی:</b> دانلود و نصب آسان نسخه‌های جدید مستقیماً از داخل اپلیکیشن\n"
-        "• <b>بدون نیاز به انتخاب پردازنده:</b> یک فایل نصبی واحد و جامع برای همه گوشی‌ها (سامسونگ، شیائومی و...)\n"
-        "• <b>پشتیبانی از دیپ‌لینک:</b> باز شدن و فعال‌سازی خودکار برنامه با یک لمس\n"
-        "• <b>هسته هوشمند ضد فیلتر:</b> پروتکل‌های نوین VLESS Reality و Sing-box\n\n"
+        "🔹 <b>امکانات و قابلیت‌های نسخه جدید:</b>\n"
+        "• <b>تست تاخیر واقعی (Real Delay):</b> سنجش دقیق پینگ سرورها قبل از برقراری ارتباط برای تضمین نهایت سرعت\n"
+        "• <b>اتصال هوشمند آبشاری:</b> تضمین پایداری بدون قطعی و سوئیچ خودکار بین سرورها\n"
+        "• <b>تفکیک خودکار ترافیک ایران:</b> باز شدن پرسرعت و مستقیم بانک‌ها و برنامه‌های داخلی\n"
+        "• <b>به‌روزرسانی خودکار داخلی:</b> دانلود و نصب نسخه‌های جدید مستقیماً از داخل اپلیکیشن\n"
+        "• <b>پشتیبانی از دیپ‌لینک:</b> باز شدن و فعال‌سازی خودکار برنامه با یک لمس\n\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
-        "👇 <b>جهت دانلود و نصب، یکی از گزینه‌های زیر را انتخاب فرمایید:</b>"
+        "📷 <b>بارکد اختصاصی (QR Code):</b> با دوربین گوشی یا بارکدخوان بارکد بالا را اسکن کنید تا دانلود بلافاصله روی گوشی آغاز شود.\n\n"
+        "👇 <b>یا از دکمه‌های پرسرعت زیر جهت دریافت مستقیم فایل نصبی استفاده فرمایید:</b>"
     )
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📥 دانلود نسخه همگانی (گیت‌هاب رسمی)", url=universal_apk_url, style="success")
+            InlineKeyboardButton("⚡ دانلود از سرور پرسرعت کمکی (Cloudflare CDN)", url=cdn_download_url, style="primary")
         ],
         [
-            InlineKeyboardButton("⚡ دانلود از سرور پرسرعت کمکی (Cloudflare CDN)", url=cdn_download_url, style="primary")
+            InlineKeyboardButton("📥 دانلود نسخه همگانی (گیت‌هاب رسمی)", url=universal_apk_url, style="success")
         ],
         [
             InlineKeyboardButton("💬 راهنمایی و پشتیبانی", url=f"https://t.me/{support_username.lstrip('@')}", style="primary"),
@@ -2639,10 +2657,28 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ]
     ])
 
-    if query:
-        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
-    elif update.message:
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
+    target_chat_id = update.effective_chat.id
+
+    try:
+        qr_bio = generate_download_qr(cdn_download_url)
+        if query and query.message:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        await context.bot.send_photo(
+            chat_id=target_chat_id,
+            photo=qr_bio,
+            caption=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Failed to send QR photo: {e}")
+        if query:
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
+        elif update.message:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
 
 async def send_support_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
