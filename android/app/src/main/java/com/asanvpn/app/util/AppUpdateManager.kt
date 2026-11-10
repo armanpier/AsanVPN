@@ -141,8 +141,9 @@ object AppUpdateManager {
 
         // 1. Try Cloudflare Worker version endpoint (ultra-fast CDN & clean IPs)
         val workerUrls = listOf(
-            sec("Mi4uKilgdXU7KTs0LCo0dy01KDE/KHQyM3c+Pyo2NSN0LTUoMT8oKXQ+Pyx1OyozdSxrdTsqKnUsPygpMzU0"),
-            sec("Mi4uKilgdXUpKjsoPzU0P3QzOS91OyozdSxrdTsqKnUsPygpMzU0")
+            sec("Mi4uKilgdXU7KTs0LCo0dz47KTI4NTsoPnQ7KDc7NCozPyh3NSIsKCJ0OygsOzQ/Pj0/dDModTsqM3Usa3U7Kip1LD8oKTM1NA=="), // ArvanCloud Edge (Primary)
+            sec("Mi4uKilgdXU7KTs0LCo0dy01KDE/KHQyM3c+Pyo2NSN0LTUoMT8oKXQ+Pyx1OyozdSxrdTsqKnUsPygpMzU0"), // Cloudflare Worker (Fallback 1)
+            sec("Mi4uKilgdXUpKjsoPzU0P3QzOS91OyozdSxrdTsqKnUsPygpMzU0") // spareone.icu (Fallback 2)
         )
 
         for (endpoint in workerUrls) {
@@ -173,8 +174,8 @@ object AppUpdateManager {
                                     AppVersionInfo(
                                         versionCode = remoteCode,
                                         versionName = remoteName,
-                                        downloadUrl = githubAssetUrl,
-                                        fallbackUrl = workerDownloadUrl,
+                                        downloadUrl = workerDownloadUrl,
+                                        fallbackUrl = githubAssetUrl,
                                         releaseNotes = releaseNotes,
                                         totalSize = totalSize,
                                         forceUpdate = force
@@ -375,6 +376,18 @@ object AppUpdateManager {
 
             if (targetFile.length() < 1024 * 1024) {
                 return Result.failure(Exception("فایل دانلود شده ناقص است. لطفاً مجدداً امتحان کنید."))
+            }
+
+            // Verify completeness against Content-Length if known
+            if (contentLength > 0 && targetFile.length() < contentLength - 1024) {
+                return Result.failure(Exception("فایل دانلود شده ناقص است (${targetFile.length()} از $contentLength بایت دریافت شد)."))
+            }
+
+            // Strict APK validity check: ensure Android package manager can parse package headers
+            val archiveInfo = context.packageManager.getPackageArchiveInfo(targetFile.absolutePath, 0)
+            if (archiveInfo == null) {
+                targetFile.delete()
+                return Result.failure(Exception("فایل نصبی دانلود شده معتبر یا کامل نیست. لطفاً مجدداً دانلود نمایید."))
             }
 
             Result.success(targetFile)

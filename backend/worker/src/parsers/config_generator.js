@@ -160,7 +160,7 @@ export function generateXrayConfig(node, allNodes = []) {
         {
           address: "10.10.34.35",
           port: 53,
-          domains: ["domain:ir", "geosite:ir"]
+          domains: ["domain:ir", "geosite:category-ir"]
         },
         "localhost"
       ]
@@ -180,7 +180,7 @@ export function generateXrayConfig(node, allNodes = []) {
           outboundTag: "direct",
           domain: [
             "domain:ir",
-            "geosite:ir",
+            "geosite:category-ir",
             "domain:shaparak.ir",
             "domain:blubank.sb24.ir",
             "domain:divar.ir",

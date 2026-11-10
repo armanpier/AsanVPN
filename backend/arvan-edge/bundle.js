@@ -1,6 +1,7 @@
 
 // ==========================================
 // AsanVPN Dashboard on ArvanCloud Edge Computing
+// Dual-Cloud Primary (Cloudflare KV) & VPS Fallback
 // ==========================================
 
 /**
@@ -2200,27 +2201,27 @@ async function handleRequest(request) {
     });
   }
 
-  // Debug headers endpoint
-  if (path === '/api/debug_headers') {
-    const rawHeaders = {};
+  // 3. Serve High-Speed APK Direct Download (domestic Iranian edge)
+  if (path === '/download' || path === '/AsanVPN.apk' || path === '/apk') {
     try {
-      if (typeof request.headers.entries === 'function') {
-        for (const [k, v] of request.headers.entries()) {
-          rawHeaders[k] = v;
-        }
-      } else {
-        Object.assign(rawHeaders, request.headers);
+      const vpsApk = await fetch('http://95.182.87.115/download', {
+        headers: { 'User-Agent': 'ArvanEdge-Download/1.0' }
+      });
+      if (vpsApk && vpsApk.status === 200) {
+        const respHeaders = new Headers(vpsApk.headers);
+        respHeaders.set('Access-Control-Allow-Origin', '*');
+        respHeaders.set('Cache-Control', 'public, max-age=1800');
+        respHeaders.set('X-Served-By', 'ArvanCloud-Edge');
+        return new Response(vpsApk.body, {
+          status: 200,
+          headers: respHeaders
+        });
       }
-    } catch (e) {
-      rawHeaders['error'] = e.message;
-    }
-    return new Response(JSON.stringify({
-      rawHeaders,
-      get_x_admin_token: (typeof request.headers.get === 'function') ? request.headers.get('x-admin-token') : 'no get function'
-    }), { headers: { 'content-type': 'application/json' } });
+    } catch (e) {}
+    return Response.redirect('https://github.com/armanpier/AsanVPN/releases/latest', 302);
   }
 
-  // 3. Proxy API requests with Cloudflare Primary & VPS Fallback
+  // 4. Proxy API requests with Cloudflare Primary & VPS Fallback
   if (path.startsWith('/api/')) {
     try {
       let adminToken = '';

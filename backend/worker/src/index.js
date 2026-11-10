@@ -173,6 +173,14 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
+    if (path === '/api/debug-headers') {
+      const h = {};
+      for (const [k, v] of request.headers.entries()) {
+        h[k] = v;
+      }
+      return new Response(JSON.stringify(h), { headers: corsHeaders });
+    }
+
     // Web Admin Dashboard UI (Serve HTML to browser)
     if ((path === '/' || path === '/admin' || path === '/dashboard') && (request.method === 'GET' || request.method === 'HEAD')) {
       const acceptHeader = request.headers.get('Accept') || '';
@@ -223,11 +231,11 @@ export default {
         rawMeta = await env.VPN_USERS.get('apk_meta');
       } catch (kvErr) {}
 
-      let version = "1.3.8";
-      let versionCode = 14;
-      let changelog = "حل مشکل نصب (App not installed) در شیائومی و هایپر او‌اس، ارتقای سرعت دانلود با بافر ۶۴ کیلوبایتی و لینک CDN پرسرعت، بازه استعلام ۱۰ دقیقه‌ای";
-      let totalSize = 60644407;
-      let githubUrl = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.8/AsanVPN-v1.3.8-universal.apk";
+      let version = "1.3.10";
+      let versionCode = 16;
+      let changelog = "حل مشکل عدم تبادل ترافیک پس از اتصال، اصلاح قواعد روتینگ هسته، دانلود مستقیم و پرسرعت بسته نصبی از لبه داخلی";
+      let totalSize = 60645531;
+      let githubUrl = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk";
 
       if (rawMeta) {
         try {
@@ -273,7 +281,7 @@ export default {
 
       const urlObj = new URL(request.url);
       const forceKv = urlObj.searchParams.get('source') === 'kv';
-      const targetGithubUrl = (meta && meta.versionCode && meta.versionCode >= 14 && meta.github_url) || "https://github.com/armanpier/AsanVPN/releases/download/v1.3.8/AsanVPN-v1.3.8-universal.apk";
+      const targetGithubUrl = (meta && meta.versionCode && meta.versionCode >= 16 && meta.github_url) || "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk";
 
       // If not explicitly forced to KV, 302 redirect for ultra-fast CDN download & zero KV usage
       if (!forceKv) {

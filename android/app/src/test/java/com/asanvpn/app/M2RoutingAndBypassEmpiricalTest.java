@@ -127,13 +127,12 @@ public class M2RoutingAndBypassEmpiricalTest {
             domains.add(el.getAsString());
         }
 
-        assertEquals("Rule1DomainCount", 3, domains.size(), "Rule 1 domain list must have exactly 3 entries");
+        assertEquals("Rule1DomainCount", 2, domains.size(), "Rule 1 domain list must have exactly 2 entries");
         assertTrue("Rule1ContainsGeositeCategoryIr", domains.contains("geosite:category-ir"), "Rule 1 contains 'geosite:category-ir'");
-        assertTrue("Rule1ContainsGeositeIr", domains.contains("geosite:ir"), "Rule 1 contains 'geosite:ir'");
         assertTrue("Rule1ContainsDomainIr", domains.contains("domain:ir"), "Rule 1 contains 'domain:ir'");
 
         // Strict exact equality of array contents
-        List<String> expectedDomains = Arrays.asList("geosite:category-ir", "geosite:ir", "domain:ir");
+        List<String> expectedDomains = Arrays.asList("geosite:category-ir", "domain:ir");
         assertEquals("Rule1ExactDomainList", expectedDomains, domains, "Rule 1 exact domain array sequence");
 
         // Rule 2: Iranian IPs & Private direct
@@ -213,10 +212,9 @@ public class M2RoutingAndBypassEmpiricalTest {
 
             JsonArray domains = rule1.getAsJsonArray("domain");
             assertTrue("Proto_" + node.getProtocol() + "_Rule1Entries",
-                    domains.size() == 3 &&
+                    domains.size() == 2 &&
                             "geosite:category-ir".equals(domains.get(0).getAsString()) &&
-                            "geosite:ir".equals(domains.get(1).getAsString()) &&
-                            "domain:ir".equals(domains.get(2).getAsString()),
+                            "domain:ir".equals(domains.get(1).getAsString()),
                     "Rule 1 domains invariant for protocol: " + node.getProtocol());
 
             JsonObject rule2 = rules.get(2).getAsJsonObject();

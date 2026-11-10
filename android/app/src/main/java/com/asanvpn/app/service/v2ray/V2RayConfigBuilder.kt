@@ -160,24 +160,12 @@ object V2RayConfigBuilder {
                     addProperty("port", "53")
                 })
 
-                // Route internal DNS client queries (1.1.1.1, 8.8.8.8 via DoH 443 or UDP 53) to proxy
-                add(JsonObject().apply {
-                    addProperty("type", "field")
-                    addProperty("outboundTag", "proxy")
-                    val ipArr = JsonArray().apply {
-                        add("1.1.1.1")
-                        add("8.8.8.8")
-                    }
-                    add("ip", ipArr)
-                })
-
                 // Rule 1: Direct Iranian domains (Chocolate4Iran geosite rules)
                 add(JsonObject().apply {
                     addProperty("type", "field")
                     addProperty("outboundTag", "direct")
                     val domainArr = JsonArray().apply {
                         add("geosite:category-ir")
-                        add("geosite:ir")
                         add("domain:ir")
                     }
                     add("domain", domainArr)

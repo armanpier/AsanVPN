@@ -89,7 +89,11 @@ class AsanVpnService : VpnService() {
             Log.i("AsanVpnService", "Seamlessly switching V2Ray core to fastest proxy on tunFd=$tunFd")
             val switched = V2RayCoreManager.startLoop(configJson, tunFd)
             Log.i("AsanVpnService", "V2Ray Core loop switched: $switched")
-            prefs.activeV2RayConfig = configJson
+            if (switched) {
+                prefs.activeV2RayConfig = configJson
+            } else {
+                Log.w("AsanVpnService", "Failed to switch V2Ray loop: core returned false")
+            }
         } catch (e: Exception) {
             Log.e("AsanVpnService", "Failed to switch V2Ray config", e)
         }
@@ -135,6 +139,12 @@ class AsanVpnService : VpnService() {
             // Start V2Ray/Xray Core loop with the TUN file descriptor
             val coreStarted = V2RayCoreManager.startLoop(configJson, tunFd)
             Log.i("AsanVpnService", "V2Ray Core started: $coreStarted on tunFd=$tunFd")
+
+            if (!coreStarted) {
+                Log.e("AsanVpnService", "CRITICAL: V2Ray Core failed to start! Tearing down tunnel...")
+                stopVpnTunnel()
+                return
+            }
 
             isRunning = true
             prefs.isConnected = true

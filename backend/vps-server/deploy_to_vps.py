@@ -16,11 +16,8 @@ ssh.exec_command('mkdir -p /etc/asanvpn')
 print("Uploading server.py...")
 sftp.put('backend/vps-server/server.py', '/etc/asanvpn/server.py')
 
-print("Uploading data.json...")
-sftp.put('backend/data/backup_kv.json', '/etc/asanvpn/data.json')
-
-print("Uploading asanvpn-api.service...")
-sftp.put('backend/vps-server/asanvpn-api.service', '/etc/systemd/system/asanvpn-api.service')
+# Ensure /opt/asanvpn exists for APK hosting
+ssh.exec_command('mkdir -p /opt/asanvpn')
 
 sftp.close()
 

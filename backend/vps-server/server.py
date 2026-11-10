@@ -24,9 +24,9 @@ BACKUP_PATH = "/etc/asanvpn/data.json"
 ADMIN_PASSWORD = "Arman4237340"
 SUPPORT_PHONE = "+989120000000"
 SUPPORT_TELEGRAM = "AsanSupport"
-APP_VERSION = "1.3.8"
-APP_VERSION_CODE = 14
-GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.8/AsanVPN-v1.3.8-universal.apk"
+APP_VERSION = "1.3.10"
+APP_VERSION_CODE = 16
+GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -187,20 +187,36 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "success": True,
                 "versionName": APP_VERSION,
                 "versionCode": APP_VERSION_CODE,
-                "totalSize": 60644407,
-                "downloadUrl": GITHUB_APK_URL,
+                "totalSize": 60645000,
+                "downloadUrl": "https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download",
+                "fallbackUrl": "http://95.182.87.115/download",
                 "githubUrl": GITHUB_APK_URL,
-                "releaseNotes": "پشتیبانی کامل از اندروید ۷، بازه استعلام ۱۰ دقیقه‌ای، اتصال مستقیم و فوق سریع به CDN",
+                "releaseNotes": "رفع کامل قطعی اینترنت پس از اتصال، مسیریابی اصلاح‌شده، دانلود مستقیم پرسرعت و همگام‌سازی پنل‌ها",
                 "publishedAt": int(time.time())
             })
 
-        # Download redirect
+        # Direct APK Download
         if path in ["/download", "/AsanVPN.apk", "/apk"]:
-            self.send_response(302)
-            self.send_header("Location", GITHUB_APK_URL)
-            self.send_cors_headers()
-            self.end_headers()
-            return
+            apk_path = "/opt/asanvpn/AsanVPN.apk"
+            if os.path.exists(apk_path):
+                file_size = os.path.getsize(apk_path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.android.package-archive")
+                self.send_header("Content-Length", str(file_size))
+                self.send_header("Content-Disposition", f'attachment; filename="AsanVPN-v{APP_VERSION}-universal.apk"')
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_cors_headers()
+                self.end_headers()
+                with open(apk_path, "rb") as f:
+                    while chunk := f.read(65536):
+                        self.wfile.write(chunk)
+                return
+            else:
+                self.send_response(302)
+                self.send_header("Location", GITHUB_APK_URL)
+                self.send_cors_headers()
+                self.end_headers()
+                return
 
         # ADMIN: Get users
         if path == "/api/v1/admin/users":
