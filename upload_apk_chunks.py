@@ -32,21 +32,21 @@ with open(apk_target, 'rb') as f:
         chunks += 1
 
 meta = {
-    'version': '1.3.6',
-    'versionCode': 12,
+    'version': '1.3.7',
+    'versionCode': 13,
     'total_size': size,
     'total_chunks': chunks,
     'chunk_size': chunk_size,
-    'filename': 'AsanVPN-v1.3.6-universal.apk',
+    'filename': 'AsanVPN-v1.3.7-universal.apk',
     'sha256': hasher.hexdigest(),
-    'changelog': 'پشتیبانی کامل از اندروید ۷ و گوشی‌های قدیمی، بهینه‌سازی ۹۰٪ مصرف منابع کلادفلر، حل مشکل عدم عبور ترافیک با DNS UDP پروکسی، رفع اتصال فیک و نمایش دقیق باقیمانده حجم و روزها'
+    'changelog': 'تنظیم بازه استعلام خودکار به هر ۱۰ دقیقه جهت همگام‌سازی سریع‌تر حجم و اعتبار، پشتیبانی کامل از اندروید ۷، بهینه‌سازی منابع کلادفلر و تضمین پایداری اتصال'
 }
 
 meta_file = os.path.join(out_dir, 'meta.json')
 with open(meta_file, 'w', encoding='utf-8') as mf:
     json.dump(meta, mf, ensure_ascii=False, indent=2)
 
-print(f'Chunked {chunks} chunks for v1.3.6, total size: {size}')
+print(f'Chunked {chunks} chunks for v1.3.7, total size: {size}')
 
 ns = 'aaf46b23b63c44a0a846911ea4b2aa19'
 worker_dir = os.path.abspath('backend/worker')

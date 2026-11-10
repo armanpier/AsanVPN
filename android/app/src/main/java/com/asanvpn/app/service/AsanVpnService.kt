@@ -139,12 +139,12 @@ class AsanVpnService : VpnService() {
             isRunning = true
             prefs.isConnected = true
 
-            // Periodic session check: passive validation every 30 minutes to save battery & Cloudflare API limits
+            // Periodic session check: passive validation every 10 minutes to keep quota synced & save Cloudflare limits
             sessionValidatorJob?.cancel()
             sessionValidatorJob = serviceScope.launch {
                 val repo = VpnRepository(this@AsanVpnService)
                 while (isRunning && isActive) {
-                    kotlinx.coroutines.delay(1800_000L) // 30 minutes
+                    kotlinx.coroutines.delay(600_000L) // 10 minutes
                     val pin = prefs.savedPin
                     if (pin.isNullOrBlank()) {
                         Log.i("AsanVpnService", "No saved PIN found, stopping VPN tunnel")
