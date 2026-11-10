@@ -19,7 +19,7 @@ WORKER_URL = os.getenv("WORKER_URL", "https://asanvpn-worker.hi-deploy.workers.d
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
 # Support & Channels
-SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@Sib_Support_P").strip()
+SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@Asanvpnsupport_bot").strip()
 APP_DOWNLOAD_URL = os.getenv("APP_DOWNLOAD_URL", "https://github.com/armanpier/AsanVPN/releases").strip()
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "").strip()
 

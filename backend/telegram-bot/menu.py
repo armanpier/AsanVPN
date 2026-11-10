@@ -219,7 +219,7 @@ def manage_settings():
         maint_mode = f"{RED}ENABLED (Sales Blocked){RESET}" if settings.get("maintenance_mode") == "1" else f"{GREEN}DISABLED (Normal Operations){RESET}"
 
         print(f"  [1] Edit Welcome Message (/start text)")
-        print(f"  [2] Support Username:       {BOLD}{settings.get('support_username', '@Sib_Support_P')}{RESET}")
+        print(f"  [2] Support Username:       {BOLD}{settings.get('support_username', '@Asanvpnsupport_bot')}{RESET}")
         print(f"  [3] App Download URL:       {BOLD}{settings.get('app_download_url', '')}{RESET}")
         print(f"  [4] Admin Sale Notification:  {sale_notif}")
         print(f"  [5] Admin Renew Notification: {renew_notif}")
@@ -243,7 +243,7 @@ def manage_settings():
                 print(f"\n{GREEN}Welcome message updated successfully.{RESET}")
                 time.sleep(1.5)
         elif choice == "2":
-            new_supp = input("Enter new Support Telegram username (e.g. @Sib_Support_P): ").strip()
+            new_supp = input("Enter new Support Telegram username (e.g. @Asanvpnsupport_bot): ").strip()
             if new_supp:
                 cur.execute("UPDATE settings SET value = ? WHERE key = 'support_username'", (new_supp,))
                 conn.commit()

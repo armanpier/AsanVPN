@@ -1,0 +1,15 @@
+[Unit]
+Description=AsanVPN Telegram Support Chat Bot (@Asanvpnsupport_bot)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/asanvpn-support-bot
+EnvironmentFile=/root/asanvpn-support-bot/.env
+ExecStart=/root/asanvpn-bot/venv/bin/python /root/asanvpn-support-bot/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -63,7 +63,7 @@ DEFAULT_SETTINGS = {
         "• پشتیبانی ۲۴ ساعته و سرورهای اختصاصی پایدار\n\n"
         "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
     ),
-    "support_username": "@Sib_Support_P",
+    "support_username": "@Asanvpnsupport_bot",
     "app_download_url": "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk",
     "backup_channel_id": "-1004389472709",
     "auto_backup_enabled": "1",

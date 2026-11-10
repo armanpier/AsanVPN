@@ -118,7 +118,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     welcome_text = welcome_template.replace("{name}", user.first_name or "کاربر")
     app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
-    support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
 
     inline_kb = InlineKeyboardMarkup([
         [
@@ -570,7 +570,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
     telegram_id = order["telegram_id"]
     order_type = order.get("order_type", "new")
     app_download_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.2.0/AsanVPN-v1.2.0-universal.apk")
-    support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
     is_admin_test = str(tracking_code).startswith("ADMIN-")
 
     plan = await db.get_plan_by_id(order.get("plan_id"))
@@ -1483,7 +1483,7 @@ async def admin_texts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     welcome = await db.get_setting("welcome_message")
-    supp = await db.get_setting("support_username", "@Sib_Support_P")
+    supp = await db.get_setting("support_username", "@Asanvpnsupport_bot")
     app_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases")
 
     text = (
@@ -1802,7 +1802,7 @@ async def admin_callback_router(update: Update, context: ContextTypes.DEFAULT_TY
 
     if data == "admin_edit_support":
         ADMIN_STATES[user_id] = {"action": "edit_support"}
-        await query.edit_message_text("📞 لطفاً آیدی جدید پشتیبانی تلگرام را ارسال کنید (مثال: <code>@Sib_Support_P</code>):", parse_mode=ParseMode.HTML)
+        await query.edit_message_text("📞 لطفاً آیدی جدید پشتیبانی تلگرام را ارسال کنید (مثال: <code>@Asanvpnsupport_bot</code>):", parse_mode=ParseMode.HTML)
         return
 
     if data == "admin_edit_applink":
@@ -2272,7 +2272,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer()
 
     app_download_url = await db.get_setting("app_download_url", "https://asanvpn-worker.hi-deploy.workers.dev/download")
-    support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
 
     # 1. Determine which PIN to show
     pin = target_pin
@@ -2461,7 +2461,7 @@ async def claim_free_test_plan(update: Update, context: ContextTypes.DEFAULT_TYP
     if query:
         await query.answer()
 
-    support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
 
     # Check 1: Already claimed test?
     if await db.has_claimed_test(user_id):
@@ -2606,7 +2606,7 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query:
         await query.answer()
 
-    support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
     universal_apk_url = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.0/AsanVPN-v1.3.0-universal.apk"
     cdn_download_url = "https://asanvpn-worker.hi-deploy.workers.dev/download"
 
@@ -2645,7 +2645,7 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
 
 async def send_support_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    support_username = await db.get_setting("support_username", "@Sib_Support_P")
+    support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
     text = (
         "💬 <b>پشتیبانی آسان وی‌پی‌ان</b>\n\n"
         "تیم پشتیبانی ما به صورت ۲۴ ساعته در خدمت شماست.\n"
