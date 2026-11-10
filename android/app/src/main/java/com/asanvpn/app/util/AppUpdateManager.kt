@@ -17,6 +17,9 @@ import okhttp3.ConnectionSpec
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import android.widget.Toast
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.InetAddress
@@ -29,6 +32,7 @@ data class AppVersionInfo(
     val versionCode: Int,
     val versionName: String,
     val downloadUrl: String,
+    val fallbackUrl: String? = null,
     val releaseNotes: String? = null,
     val totalSize: Long = 0L,
     val forceUpdate: Boolean = false
@@ -156,7 +160,9 @@ object AppUpdateManager {
                             val json = gson.fromJson(body, JsonObject::class.java)
                             val remoteName = json.get("versionName")?.asString ?: ""
                             val remoteCode = json.get("versionCode")?.asInt ?: 0
-                            val downloadUrl = json.get("downloadUrl")?.asString ?: "https://asanvpn-worker.hi-deploy.workers.dev/download"
+                            val workerDownloadUrl = json.get("downloadUrl")?.asString ?: "https://asanvpn-worker.hi-deploy.workers.dev/download"
+                            val githubAssetUrl = json.get("githubUrl")?.asString
+                                ?: "https://github.com/armanpier/AsanVPN/releases/download/v$remoteName/AsanVPN-v$remoteName-universal.apk"
                             val releaseNotes = json.get("releaseNotes")?.asString
                             val totalSize = json.get("totalSize")?.asLong ?: 0L
                             val force = json.get("forceUpdate")?.asBoolean ?: false
@@ -167,7 +173,8 @@ object AppUpdateManager {
                                     AppVersionInfo(
                                         versionCode = remoteCode,
                                         versionName = remoteName,
-                                        downloadUrl = downloadUrl,
+                                        downloadUrl = githubAssetUrl,
+                                        fallbackUrl = workerDownloadUrl,
                                         releaseNotes = releaseNotes,
                                         totalSize = totalSize,
                                         forceUpdate = force
@@ -254,37 +261,66 @@ object AppUpdateManager {
 
     /**
      * Downloads APK file internally and provides download progress callbacks.
+     * Tries primary URL first, falls back to fallbackUrl if primary fails.
      */
     suspend fun downloadApk(
         context: Context,
         downloadUrl: String,
+        fallbackUrl: String? = null,
         expectedTotalBytes: Long = 0L,
         onProgress: (progress: Float, downloadedMb: Float, totalMb: Float) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
-        try {
-            val updateDir = File(context.cacheDir, "updates")
+        val primaryRes = downloadFromSingleUrl(context, downloadUrl, expectedTotalBytes, onProgress)
+        if (primaryRes.isSuccess) {
+            return@withContext primaryRes
+        }
+
+        if (!fallbackUrl.isNullOrBlank() && fallbackUrl != downloadUrl) {
+            AppLogger.logAdmin("Primary download failed, trying fallback URL: $fallbackUrl")
+            return@withContext downloadFromSingleUrl(context, fallbackUrl, expectedTotalBytes, onProgress)
+        }
+
+        primaryRes
+    }
+
+    private suspend fun downloadFromSingleUrl(
+        context: Context,
+        url: String,
+        expectedTotalBytes: Long,
+        onProgress: (progress: Float, downloadedMb: Float, totalMb: Float) -> Unit
+    ): Result<File> {
+        return try {
+            // Use external downloads directory so MIUI PackageInstaller and system scanners can access the APK
+            val updateDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                ?: context.externalCacheDir
+                ?: File(context.cacheDir, "updates")
+
             if (!updateDir.exists()) updateDir.mkdirs()
 
             // Delete any existing older update files
-            updateDir.listFiles()?.forEach { it.delete() }
+            updateDir.listFiles()?.forEach { file ->
+                if (file.name.startsWith("AsanVPN") && file.name.endsWith(".apk")) {
+                    file.delete()
+                }
+            }
 
             val targetFile = File(updateDir, "AsanVPN-update.apk")
             if (targetFile.exists()) targetFile.delete()
 
             val request = Request.Builder()
-                .url(downloadUrl)
+                .url(url)
                 .header("User-Agent", "AsanVPN-Updater")
+                .header("Accept-Encoding", "identity")
                 .get()
                 .build()
 
             val response = httpClient.newCall(request).execute()
             if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("خطا در برقراری ارتباط با سرور دانلود (کد ${response.code})"))
+                return Result.failure(Exception("خطا در برقراری ارتباط با سرور دانلود (کد ${response.code})"))
             }
 
-            val body = response.body ?: return@withContext Result.failure(Exception("پاسخ دریافتی خالی بود."))
-            
-            // Resolve actual total content length across multiple sources
+            val body = response.body ?: return Result.failure(Exception("پاسخ دریافتی خالی بود."))
+
             var contentLength = body.contentLength()
             if (contentLength <= 0) {
                 val headerLength = response.header("X-Total-Length")?.toLongOrNull()
@@ -300,37 +336,45 @@ object AppUpdateManager {
 
             val totalMb = if (contentLength > 0) contentLength / (1024f * 1024f) else 0f
 
-            body.byteStream().use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalRead = 0L
-                    var lastReportTime = 0L
+            body.byteStream().use { rawInput ->
+                BufferedInputStream(rawInput, 65536).use { input ->
+                    FileOutputStream(targetFile).use { rawOutput ->
+                        BufferedOutputStream(rawOutput, 65536).use { output ->
+                            val buffer = ByteArray(65536) // 64 KB buffer for high-throughput download
+                            var bytesRead: Int
+                            var totalRead = 0L
+                            var lastReportTime = 0L
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        totalRead += bytesRead
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                totalRead += bytesRead
 
-                        val now = System.currentTimeMillis()
-                        if (now - lastReportTime > 60 || totalRead == contentLength) {
-                            lastReportTime = now
-                            val progress = if (contentLength > 0) {
-                                (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
-                            } else {
-                                0f
+                                val now = System.currentTimeMillis()
+                                // Throttle UI progress updates to 300ms to avoid locking the Compose UI & stalling network thread
+                                if (now - lastReportTime >= 300 || totalRead == contentLength) {
+                                    lastReportTime = now
+                                    val progress = if (contentLength > 0) {
+                                        (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                                    } else {
+                                        0f
+                                    }
+                                    val downloadedMb = totalRead / (1024f * 1024f)
+                                    withContext(Dispatchers.Main) {
+                                        onProgress(progress, downloadedMb, totalMb)
+                                    }
+                                }
                             }
-                            val downloadedMb = totalRead / (1024f * 1024f)
-                            withContext(Dispatchers.Main) {
-                                onProgress(progress, downloadedMb, totalMb)
-                            }
+                            output.flush()
                         }
                     }
-                    output.flush()
                 }
             }
 
+            // Set world readable so system PackageInstaller can read the file
+            targetFile.setReadable(true, false)
+
             if (targetFile.length() < 1024 * 1024) {
-                return@withContext Result.failure(Exception("فایل دانلود شده ناقص است. لطفاً مجدداً امتحان کنید."))
+                return Result.failure(Exception("فایل دانلود شده ناقص است. لطفاً مجدداً امتحان کنید."))
             }
 
             Result.success(targetFile)
@@ -346,14 +390,24 @@ object AppUpdateManager {
         return try {
             if (!apkFile.exists()) return false
 
+            // Ensure the file is readable by all UIDs (PackageInstaller)
+            apkFile.setReadable(true, false)
+
             // Check if app has permission to install unknown apps (API 26+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!context.packageManager.canRequestPackageInstalls()) {
+                    Toast.makeText(
+                        context,
+                        "لطفاً اجازه نصب برنامه از این منبع را فعال کنید",
+                        Toast.LENGTH_LONG
+                    ).show()
+
                     val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:${context.packageName}")
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(settingsIntent)
+                    return false
                 }
             }
 
@@ -366,7 +420,25 @@ object AppUpdateManager {
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+
+            // Explicitly grant read URI permissions to all matching package installers (critical for MIUI/HyperOS)
+            val resInfoList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.queryIntentActivities(
+                    installIntent,
+                    PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            }
+
+            for (resolveInfo in resInfoList) {
+                val targetPkg = resolveInfo.activityInfo.packageName
+                context.grantUriPermission(targetPkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
             context.startActivity(installIntent)

@@ -815,6 +815,7 @@ class MainActivity : ComponentActivity() {
             val res = AppUpdateManager.downloadApk(
                 context = this@MainActivity,
                 downloadUrl = info.downloadUrl,
+                fallbackUrl = info.fallbackUrl,
                 expectedTotalBytes = info.totalSize,
                 onProgress = { progress, downloaded, total ->
                     updateDownloadProgress = progress

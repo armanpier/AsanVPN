@@ -218,18 +218,27 @@ export default {
 
     // App Version & In-App Update API Endpoint
     if ((path === '/api/v1/app/version' || path === '/api/v1/version' || path === '/version') && (request.method === 'GET' || request.method === 'HEAD')) {
-      const rawMeta = await env.VPN_USERS.get('apk_meta');
-      let version = "1.3.4";
-      let versionCode = 10;
-      let changelog = "رفع مشکل قفل موقت ۳۰ دقیقه‌ای، بازگشایی آنی مسدودی توسط پنل Asan Dashboard، و ارتقای ثبات اتصال";
-      let totalSize = 69791489;
+      let rawMeta = null;
+      try {
+        rawMeta = await env.VPN_USERS.get('apk_meta');
+      } catch (kvErr) {}
+
+      let version = "1.3.8";
+      let versionCode = 14;
+      let changelog = "حل مشکل نصب (App not installed) در شیائومی و هایپر او‌اس، ارتقای سرعت دانلود با بافر ۶۴ کیلوبایتی و لینک CDN پرسرعت، بازه استعلام ۱۰ دقیقه‌ای";
+      let totalSize = 60644407;
+      let githubUrl = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.8/AsanVPN-v1.3.8-universal.apk";
+
       if (rawMeta) {
         try {
           const meta = JSON.parse(rawMeta);
-          if (meta.version) version = meta.version;
-          if (meta.versionCode) versionCode = meta.versionCode;
-          if (meta.total_size) totalSize = meta.total_size;
-          if (meta.changelog) changelog = meta.changelog;
+          if (meta.versionCode && meta.versionCode > versionCode) {
+            version = meta.version;
+            versionCode = meta.versionCode;
+            if (meta.total_size) totalSize = meta.total_size;
+            if (meta.changelog) changelog = meta.changelog;
+            if (meta.github_url) githubUrl = meta.github_url;
+          }
         } catch (e) {}
       }
       return new Response(JSON.stringify({
@@ -238,7 +247,7 @@ export default {
         versionCode: versionCode,
         totalSize: totalSize,
         downloadUrl: "https://asanvpn-worker.hi-deploy.workers.dev/download",
-        githubUrl: "https://github.com/armanpier/AsanVPN/releases/latest",
+        githubUrl: githubUrl,
         releaseNotes: changelog,
         publishedAt: Math.floor(Date.now() / 1000)
       }), {
@@ -250,13 +259,30 @@ export default {
       });
     }
 
-    // Direct APK Download Endpoint (Hosted directly on Cloudflare Worker CDN)
+    // Direct APK Download Endpoint (Hosted directly on Cloudflare Worker CDN with Fast CDN Redirect)
     if ((path === '/download' || path === '/AsanVPN.apk' || path === '/apk') && (request.method === 'GET' || request.method === 'HEAD')) {
-      const rawMeta = await env.VPN_USERS.get('apk_meta');
-      if (!rawMeta) {
-        return new Response('APK file not found on server.', { status: 404 });
+      let rawMeta = null;
+      try {
+        rawMeta = await env.VPN_USERS.get('apk_meta');
+      } catch (kvErr) {}
+
+      let meta = null;
+      if (rawMeta) {
+        try { meta = JSON.parse(rawMeta); } catch (e) {}
       }
-      const meta = JSON.parse(rawMeta);
+
+      const urlObj = new URL(request.url);
+      const forceKv = urlObj.searchParams.get('source') === 'kv';
+      const targetGithubUrl = (meta && meta.versionCode && meta.versionCode >= 14 && meta.github_url) || "https://github.com/armanpier/AsanVPN/releases/download/v1.3.8/AsanVPN-v1.3.8-universal.apk";
+
+      // If not explicitly forced to KV, 302 redirect for ultra-fast CDN download & zero KV usage
+      if (!forceKv) {
+        return Response.redirect(targetGithubUrl, 302);
+      }
+
+      if (!meta) {
+        return Response.redirect(targetGithubUrl, 302);
+      }
 
       if (request.method === 'HEAD') {
         return new Response(null, {
