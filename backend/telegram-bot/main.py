@@ -2296,15 +2296,6 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
                         pin = p
             all_pins = await db.get_user_all_pins(user_id)
 
-    # 1.8. If admin has no personal PIN, retrieve recent admin-issued subscriptions
-    if not pin and is_admin(user_id):
-        recent_admin_pins = await db.get_recent_admin_pins(limit=5)
-        if recent_admin_pins:
-            pin = recent_admin_pins[0]
-            for p in recent_admin_pins:
-                if p not in all_pins:
-                    all_pins.append(p)
-
     # 2. If no PIN is registered for this telegram user in database or worker
     if not pin:
         text = (
@@ -2455,13 +2446,7 @@ async def status_view_pin_callback(update: Update, context: ContextTypes.DEFAULT
     await show_user_status_flow(update, context, target_pin=pin)
 
 async def handle_status_pin_input(update: Update, context: ContextTypes.DEFAULT_TYPE, pin: str):
-    user = update.effective_user
-    user_id = user.id if user else 0
     clean_pin = str(pin).strip()
-    if user_id and clean_pin:
-        rec = await worker.get_user_by_pin(clean_pin)
-        if rec:
-            await db.link_pin_to_user(user_id, clean_pin)
     await show_user_status_flow(update, context, target_pin=clean_pin)
 
 # ----------------- FREE TEST PLAN (1 TIME: 1GB, 1 DAY, 2 DEVICES) -----------------
@@ -2486,47 +2471,65 @@ async def claim_free_test_plan(update: Update, context: ContextTypes.DEFAULT_TYP
             "⚠️ <b>سهمیه اشتراک تست رایگان شما استفاده شده است</b>\n"
             "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
             f"👤 <b>کاربر گرامی {user.first_name or ''}:</b>\n"
-            "هر کاربر تلگرام مجاز به <b>۱ بار</b> دریافت اشتراک تست رایگان می‌باشد.\n\n"
-            f"🔑 <b>کد تست اختصاصی ثبت‌شده شما:</b>\n\n"
-            f"👉  <code>{claimed_pin}</code>  👈\n\n"
-            "👆 <b>(برای کپی کردن، کافیست یک‌بار روی کد بالا ضربه بزنید)</b>\n\n"
-            f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={claimed_pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
+            "هر کاربر تلگرام مجاز به <b>تنها ۱ بار</b> دریافت اشتراک تست رایگان می‌باشد و سهمیه شما پیش‌تر ثبت شده است.\n\n"
+        )
+        if claimed_pin:
+            text += (
+                f"🔑 <b>کد تست اختصاصی ثبت‌شده شما:</b>\n\n"
+                f"👉  <code>{claimed_pin}</code>  👈\n\n"
+                "👆 <b>(برای کپی کردن، کافیست یک‌بار روی کد بالا ضربه بزنید)</b>\n\n"
+                f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={claimed_pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
+            )
+        text += (
             "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
             "💡 در صورتی که زمان یا حجم تست شما به پایان رسیده، می‌توانید یکی از پلن‌های اقتصادی و پرسرعت ۲ کاربره ما را با آی‌پی ثابت و سرورهای بدون قطعی VIP تهیه فرمایید:"
         )
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 اتصال و فعال‌سازی مستقیم در برنامه", url=f"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={claimed_pin}")],
-            [InlineKeyboardButton("🛒 خرید اشتراک پرسرعت جدید", callback_data="buy_new_plan", style="danger")],
-            [InlineKeyboardButton("📊 استعلام وضعیت این اشتراک", callback_data=f"status_view_pin:{claimed_pin}", style="success")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")]
-        ])
+        kb_buttons = []
+        if claimed_pin:
+            kb_buttons.append([InlineKeyboardButton("🚀 اتصال و فعال‌سازی مستقیم در برنامه", url=f"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={claimed_pin}")])
+        kb_buttons.append([InlineKeyboardButton("🛒 خرید اشتراک پرسرعت جدید", callback_data="buy_new_plan", style="danger")])
+        if claimed_pin:
+            kb_buttons.append([InlineKeyboardButton("📊 استعلام وضعیت این اشتراک", callback_data=f"status_view_pin:{claimed_pin}", style="success")])
+        kb_buttons.append([InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")])
+        kb = InlineKeyboardMarkup(kb_buttons)
         if query:
             await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
         elif update.message:
             await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
         return
 
-    # Check 2: Already bought a paid plan?
-    if await db.has_paid_order(user_id):
-        latest_pin = await db.get_user_latest_pin(user_id)
+    # Check 2: Already has an active subscription or existing account?
+    all_pins = await db.get_user_all_pins(user_id)
+    has_paid = await db.has_paid_order(user_id)
+    existing_cf = await worker.find_users_by_telegram_id(user_id)
+
+    if has_paid or all_pins or existing_cf:
+        active_pin = all_pins[0] if all_pins else (str(existing_cf[0].get("pin", "")).strip() if existing_cf else "")
         text = (
-            "💎 <b>شما در حال حاضر مشترک فعال آسان وی‌پی‌ان هستید!</b>\n"
+            "💎 <b>شما در حال حاضر دارای حساب کاربری فعال در آسان وی‌پی‌ان هستید!</b>\n"
             "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
             f"👤 <b>کاربر گرامی {user.first_name or ''}:</b>\n"
-            "اشتراک تست رایگان مختص کاربران جدیدی است که تاکنون خریدی انجام نداده‌اند.\n"
-            "شما از همراهان گرامی ما هستید و دارای اشتراک اختصاصی می‌باشید.\n\n"
-            f"🔑 <b>کد اشتراک فعال شما:</b>\n\n"
-            f"👉  <code>{latest_pin}</code>  👈\n\n"
-            "👆 <b>(برای کپی کردن، کافیست یک‌بار روی کد بالا ضربه بزنید)</b>\n\n"
-            f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={latest_pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
-            "جهت بررسی وضعیت یا افزایش حجم، از دکمه‌های زیر استفاده فرمایید:"
+            "اشتراک تست رایگان تنها مختص <b>کاربران جدیدی</b> است که تاکنون هیچ‌گونه اشتراکی در سیستم نداشته‌اند.\n"
+            "شما در حال حاضر دارای حساب کاربری و اشتراک فعال در سیستم می‌باشید و نیازی به فعال‌سازی تست ندارید.\n\n"
         )
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 اتصال و فعال‌سازی مستقیم در برنامه", url=f"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={latest_pin}")],
-            [InlineKeyboardButton("📊 استعلام وضعیت اشتراک من", callback_data="status_flow", style="success")],
-            [InlineKeyboardButton("🔄 تمدید و افزایش حجم", callback_data="renew_flow", style="danger")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")]
-        ])
+        if active_pin:
+            text += (
+                f"🔑 <b>کد اختصاصی اشتراک شما:</b>\n\n"
+                f"👉  <code>{active_pin}</code>  👈\n\n"
+                "👆 <b>(برای کپی کردن، کافیست یک‌بار روی کد بالا ضربه بزنید)</b>\n\n"
+                f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={active_pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
+            )
+        text += (
+            "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
+            "جهت بررسی مشخصات، تمدید و یا افزایش حجم می‌توانید از گزینه‌های زیر استفاده فرمایید:"
+        )
+        kb_buttons = []
+        if active_pin:
+            kb_buttons.append([InlineKeyboardButton("🚀 اتصال و فعال‌سازی مستقیم در برنامه", url=f"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={active_pin}")])
+        kb_buttons.append([InlineKeyboardButton("📊 استعلام وضعیت اشتراک من", callback_data="status_flow", style="success")])
+        kb_buttons.append([InlineKeyboardButton("🔄 تمدید و افزایش حجم", callback_data="renew_flow", style="danger")])
+        kb_buttons.append([InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")])
+        kb = InlineKeyboardMarkup(kb_buttons)
         if query:
             await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
         elif update.message:
@@ -2544,7 +2547,9 @@ async def claim_free_test_plan(update: Update, context: ContextTypes.DEFAULT_TYP
         name=f"Test TG @{user_id} - {user.first_name or ''}",
         days=1,
         traffic_gb=1,
-        max_devices=2
+        max_devices=2,
+        telegram_id=user_id,
+        is_test=True
     )
 
     if not worker_user or not worker_user.get("pin"):

@@ -52,7 +52,7 @@ class WorkerClient:
             logger.error(f"Error testing panel: {e}")
             return {"ok": False, "error": str(e)}
 
-    async def create_user(self, name: str, days: int = 30, traffic_gb: float = 0, max_devices: int = 1, panel_ids: list = None) -> dict:
+    async def create_user(self, name: str, days: int = 30, traffic_gb: float = 0, max_devices: int = 1, panel_ids: list = None, telegram_id: int = None, is_test: bool = False) -> dict:
         """
         Create a new user with an 8-digit PIN and provision them on remote proxy panels with exact traffic and days.
         """
@@ -72,6 +72,10 @@ class WorkerClient:
             "max_devices": int(max_devices),
             "panel_ids": panel_ids
         }
+        if telegram_id:
+            payload["telegram_id"] = int(telegram_id)
+        if is_test:
+            payload["is_test"] = True
 
         try:
             async with httpx.AsyncClient(timeout=25.0) as client:
@@ -145,7 +149,7 @@ class WorkerClient:
     async def find_users_by_telegram_id(self, telegram_id: int) -> list:
         """
         Find all users on Cloudflare Worker created for a specific telegram_id.
-        Matches user names containing the telegram_id.
+        Matches user records strictly by telegram_id, or explicit Telegram tag in name/email.
         """
         url = f"{self.base_url}/api/v1/admin/users"
         matched = []
@@ -155,13 +159,16 @@ class WorkerClient:
                 if res.status_code == 200:
                     data = res.json()
                     users = data.get("users", [])
-                    tag = str(telegram_id)
-                    tag_prefix = tag[:7] if len(tag) >= 7 else tag
+                    str_tid = str(telegram_id).strip()
                     for u in users:
+                        u_tid = str(u.get("telegram_id", "")).strip()
                         name = str(u.get("name", ""))
                         email = str(u.get("email", ""))
-                        u_tid = str(u.get("telegram_id", ""))
-                        if (tag in name or tag in email or u_tid == tag or (tag_prefix and tag_prefix in name)) and u.get("pin"):
+                        if not u.get("pin"):
+                            continue
+                        if u_tid and u_tid == str_tid:
+                            matched.append(u)
+                        elif f"@{str_tid}" in name or f"TG {str_tid}" in name or f"telegram{str_tid}" in name.lower() or f"@{str_tid}" in email:
                             matched.append(u)
         except Exception as e:
             logger.error(f"Error finding users by telegram_id {telegram_id}: {e}")

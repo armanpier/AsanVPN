@@ -835,6 +835,26 @@ export default {
           return new Response(JSON.stringify({ error: 'Failed to generate unique PIN' }), { status: 500, headers: corsHeaders });
         }
 
+        // Strict 1-time test subscription check on Cloudflare Worker
+        if (body.is_test && body.telegram_id) {
+          const list = await env.VPN_USERS.list();
+          for (const key of list.keys) {
+            if (!/^\d+$/.test(key.name)) continue;
+            const existingRaw = await env.VPN_USERS.get(key.name);
+            if (existingRaw) {
+              try {
+                const ex = JSON.parse(existingRaw);
+                if (ex.telegram_id && String(ex.telegram_id) === String(body.telegram_id) && ex.is_test) {
+                  return new Response(JSON.stringify({
+                    error: 'Already claimed',
+                    message_fa: 'سهمیه اشتراک تست رایگان قبلاً برای این حساب تلگرام فعال شده است.'
+                  }), { status: 400, headers: corsHeaders });
+                }
+              } catch (_) {}
+            }
+          }
+        }
+
         const now = Math.floor(Date.now() / 1000);
         const days = parseInt(body.days || '30', 10);
         const expiresAt = now + (days * 86400);
@@ -865,7 +885,9 @@ export default {
           bound_at: null,
           active: true,
           created_at: now,
-          expires_at: expiresAt
+          expires_at: expiresAt,
+          telegram_id: body.telegram_id ? parseInt(body.telegram_id, 10) : null,
+          is_test: Boolean(body.is_test)
         };
 
         const allPanels = await PanelManager.getPanels(env);
