@@ -2266,24 +2266,10 @@ async function handleRequest(request) {
       let response = null;
       let lastErr = null;
 
-      // 1. Primary: Cloudflare Cloud KV Storage (Serverless & independent of any VPS filtering/changes)
-      try {
-        const cfResp = await fetch(cfUrl.toString(), {
-          method: request.method,
-          headers: outgoingHeaders,
-          body: reqBody
-        });
-        if (cfResp && (cfResp.status === 200 || cfResp.status === 204)) {
-          response = cfResp;
-        } else {
-          lastErr = new Error('Cloudflare returned status ' + (cfResp ? cfResp.status : 'null'));
-        }
-      } catch (e) {
-        lastErr = e;
-      }
+      const isFromWorker = request.headers.get('x-from-worker') === '1' || request.headers.get('X-From-Worker') === '1';
 
-      // 2. Secondary Fallback: VPS Standalone SQLite (if Cloudflare KV is rate-limited or unavailable)
-      if (!response) {
+      if (isFromWorker) {
+        // Direct to VPS without looping back to Cloudflare
         try {
           response = await fetch(vpsUrl.toString(), {
             method: request.method,
@@ -2291,7 +2277,36 @@ async function handleRequest(request) {
             body: reqBody
           });
         } catch (e) {
-          throw new Error('Both Cloudflare and VPS failed: ' + (lastErr ? lastErr.message : '') + ' | ' + e.message);
+          throw new Error('Direct VPS fetch failed: ' + e.message);
+        }
+      } else {
+        // 1. Primary: Cloudflare Cloud KV Storage (Serverless & independent of any VPS filtering/changes)
+        try {
+          const cfResp = await fetch(cfUrl.toString(), {
+            method: request.method,
+            headers: outgoingHeaders,
+            body: reqBody
+          });
+          if (cfResp && (cfResp.status === 200 || cfResp.status === 204)) {
+            response = cfResp;
+          } else {
+            lastErr = new Error('Cloudflare returned status ' + (cfResp ? cfResp.status : 'null'));
+          }
+        } catch (e) {
+          lastErr = e;
+        }
+
+        // 2. Secondary Fallback: VPS Standalone SQLite (if Cloudflare KV is rate-limited or unavailable)
+        if (!response) {
+          try {
+            response = await fetch(vpsUrl.toString(), {
+              method: request.method,
+              headers: outgoingHeaders,
+              body: reqBody
+            });
+          } catch (e) {
+            throw new Error('Both Cloudflare and VPS failed: ' + (lastErr ? lastErr.message : '') + ' | ' + e.message);
+          }
         }
       }
 

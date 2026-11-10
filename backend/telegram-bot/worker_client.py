@@ -21,13 +21,23 @@ class WorkerClient:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 res = await client.post(primary_url, json=json_data, headers=self.headers)
                 if res.status_code in (200, 201):
-                    # Also mirror to fallback in background
-                    try:
-                        async with httpx.AsyncClient(timeout=3.0) as fb_client:
-                            await fb_client.post(f"{self.fallback_url}{path}", json=json_data, headers=self.headers)
-                    except Exception:
-                        pass
-                    return res.json()
+                    data = res.json()
+                    # If this created/updated a user, mirror the resulting user WITH its PIN to VPS
+                    if data and isinstance(data, dict):
+                        user_obj = data.get("user")
+                        if user_obj and user_obj.get("pin"):
+                            try:
+                                async with httpx.AsyncClient(timeout=3.0) as fb_client:
+                                    await fb_client.post(f"{self.fallback_url}/api/v1/admin/user", json=user_obj, headers=self.headers)
+                            except Exception:
+                                pass
+                        elif path != "/api/v1/admin/create":
+                            try:
+                                async with httpx.AsyncClient(timeout=3.0) as fb_client:
+                                    await fb_client.post(f"{self.fallback_url}{path}", json=json_data, headers=self.headers)
+                            except Exception:
+                                pass
+                    return data
                 else:
                     logger.warning(f"Primary {primary_url} returned {res.status_code}: {res.text}. Triggering fallback...")
         except Exception as e:

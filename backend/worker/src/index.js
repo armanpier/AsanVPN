@@ -16,16 +16,16 @@ async function syncToVps(key, value) {
     const adminToken = "Arman4237340";
     if (/^\d{8}$/.test(key)) {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-      await fetch("http://95.182.87.115/api/v1/admin/user", {
+      await fetch("https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/api/v1/admin/user", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken },
+        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken, "X-From-Worker": "1" },
         body: JSON.stringify(parsed)
       });
     } else if (key === '__CONFIG_PANELS__') {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-      await fetch("http://95.182.87.115/api/v1/admin/panels", {
+      await fetch("https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/api/v1/admin/panels", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken },
+        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken, "X-From-Worker": "1" },
         body: JSON.stringify({ panels: parsed })
       });
     }
@@ -50,10 +50,10 @@ async function getCachedUserRecord(env, pin) {
     console.warn(`KV get error for ${pin}:`, err?.message);
   }
 
-  // Fallback to VPS SQLite if not in KV (e.g. created during KV quota exhaustion)
+  // Fallback to VPS SQLite via Arvan Edge Gateway if not in KV (e.g. created during KV quota exhaustion)
   try {
-    const vpsResp = await fetch(`http://95.182.87.115/api/v1/admin/user?pin=${pin}`, {
-      headers: { "X-Admin-Token": "Arman4237340" }
+    const vpsResp = await fetch(`https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/api/v1/admin/user?pin=${pin}`, {
+      headers: { "X-Admin-Token": "Arman4237340", "X-From-Worker": "1" }
     });
     if (vpsResp && vpsResp.status === 200) {
       const vpsData = await vpsResp.json();
