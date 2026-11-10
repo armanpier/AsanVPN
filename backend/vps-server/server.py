@@ -218,6 +218,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
 
+        # ADMIN: Get single user
+        if path == "/api/v1/admin/user":
+            if not self.check_admin_auth():
+                return self.send_json(401, {"error": "Unauthorized", "message": "رمز عبور یا توکن مدیریت نامعتبر است"})
+            qs = urllib.parse.parse_qs(parsed.query)
+            pin = qs.get("pin", [""])[0].strip()
+            raw = db.get(pin)
+            if raw:
+                try:
+                    return self.send_json(200, {"success": True, "user": json.loads(raw)})
+                except Exception:
+                    pass
+            return self.send_json(404, {"error": "User not found", "message": "کاربر یافت نشد."})
+
         # ADMIN: Get users
         if path == "/api/v1/admin/users":
             if not self.check_admin_auth():
@@ -271,13 +285,78 @@ class RequestHandler(BaseHTTPRequestHandler):
             if not self.check_admin_auth():
                 return self.send_json(401, {"error": "Unauthorized", "message": "رمز عبور یا توکن مدیریت نامعتبر است"})
 
+            # ADMIN: Extend User
+            if path == "/api/v1/admin/extend":
+                pin = str(body.get("pin", "")).strip()
+                days = int(body.get("days", 30))
+                traffic_gb = float(body.get("traffic_gb", 0))
+                raw_user = db.get(pin)
+                if not raw_user:
+                    return self.send_json(404, {"error": "User not found", "message": "کاربر یافت نشد."})
+                try:
+                    user = json.loads(raw_user)
+                    now = int(time.time())
+                    current_exp = user.get("expires_at")
+                    if current_exp and current_exp > now:
+                        new_exp = current_exp + (days * 86400)
+                    else:
+                        new_exp = now + (days * 86400)
+                    user["expires_at"] = new_exp
+                    user["active"] = True
+
+                    traffic_bytes_to_add = int(round(traffic_gb * (1024**3)))
+                    current_total = int(user.get("traffic_total_bytes", 0) or 0)
+                    current_rem = int(user.get("traffic_remaining_bytes", 0) or 0)
+                    user["traffic_total_bytes"] = current_total + traffic_bytes_to_add
+                    user["traffic_remaining_bytes"] = max(0, current_rem) + traffic_bytes_to_add
+
+                    db.put(pin, json.dumps(user, ensure_ascii=False))
+                    return self.send_json(200, {
+                        "status": "success",
+                        "pin": pin,
+                        "new_expires_at": user["expires_at"],
+                        "traffic_total_bytes": user["traffic_total_bytes"],
+                        "traffic_remaining_bytes": user["traffic_remaining_bytes"]
+                    })
+                except Exception as e:
+                    return self.send_json(500, {"error": str(e)})
+
             # ADMIN: Add/Edit User
             if path in ["/api/v1/admin/user", "/api/v1/admin/create", "/api/v1/admin/update"]:
                 pin = str(body.get("pin", "")).strip()
-                if not pin or len(pin) != 8 or not pin.isdigit():
+                if not pin:
+                    import random
+                    while True:
+                        cand = str(random.randint(10000000, 99999999))
+                        if not db.get(cand):
+                            pin = cand
+                            break
+                    body["pin"] = pin
+                if len(pin) != 8 or not pin.isdigit():
                     return self.send_json(400, {"error": "Invalid PIN", "message": "کد اشتراک باید ۸ رقم باشد."})
+                
+                now = int(time.time())
+                days = int(body.get("days", 30))
+                traffic_gb = float(body.get("traffic_gb", 0))
+                traffic_bytes = int(round(traffic_gb * (1024**3))) if traffic_gb > 0 else (body.get("traffic_total_bytes") or 0)
+                if not body.get("created_at"):
+                    body["created_at"] = now
+                if not body.get("expires_at"):
+                    body["expires_at"] = now + (days * 86400)
+                if "traffic_total_bytes" not in body or not body["traffic_total_bytes"]:
+                    body["traffic_total_bytes"] = traffic_bytes
+                if "traffic_remaining_bytes" not in body or not body["traffic_remaining_bytes"]:
+                    body["traffic_remaining_bytes"] = traffic_bytes
+                if "active" not in body:
+                    body["active"] = True
+
                 db.put(pin, json.dumps(body, ensure_ascii=False))
-                return self.send_json(200, {"success": True, "message": "کاربر با موفقیت ثبت شد."})
+                return self.send_json(200, {
+                    "success": True,
+                    "status": "created" if path == "/api/v1/admin/create" else "success",
+                    "user": body,
+                    "message": "کاربر با موفقیت ثبت شد."
+                })
 
             # ADMIN: Save Panels
             if path in ["/api/v1/admin/panels", "/api/v1/admin/panels/save"]:

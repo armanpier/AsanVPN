@@ -11,19 +11,59 @@ import { getOpenAppHtml } from './open_ui.js';
 const memoryUserCache = new Map(); // pin -> { data: userObject, exp: timestamp }
 const MEMORY_USER_CACHE_TTL_MS = 120 * 1000; // 2 minutes in-memory cache per isolate
 
+async function syncToVps(key, value) {
+  try {
+    const adminToken = "Arman4237340";
+    if (/^\d{8}$/.test(key)) {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      await fetch("http://95.182.87.115/api/v1/admin/user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken },
+        body: JSON.stringify(parsed)
+      });
+    } else if (key === '__CONFIG_PANELS__') {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      await fetch("http://95.182.87.115/api/v1/admin/panels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken },
+        body: JSON.stringify({ panels: parsed })
+      });
+    }
+  } catch (e) {
+    console.warn("VPS sync failed:", e?.message);
+  }
+}
+
 async function getCachedUserRecord(env, pin) {
   const cached = memoryUserCache.get(pin);
   if (cached && Date.now() < cached.exp) {
     return cached.data;
   }
-  const raw = await env.VPN_USERS.get(pin);
-  if (raw) {
-    try {
+  try {
+    const raw = await env.VPN_USERS.get(pin);
+    if (raw) {
       const parsed = JSON.parse(raw);
       memoryUserCache.set(pin, { data: parsed, exp: Date.now() + MEMORY_USER_CACHE_TTL_MS });
       return parsed;
-    } catch (_) {}
+    }
+  } catch (err) {
+    console.warn(`KV get error for ${pin}:`, err?.message);
   }
+
+  // Fallback to VPS SQLite if not in KV (e.g. created during KV quota exhaustion)
+  try {
+    const vpsResp = await fetch(`http://95.182.87.115/api/v1/admin/user?pin=${pin}`, {
+      headers: { "X-Admin-Token": "Arman4237340" }
+    });
+    if (vpsResp && vpsResp.status === 200) {
+      const vpsData = await vpsResp.json();
+      if (vpsData && vpsData.user) {
+        memoryUserCache.set(pin, { data: vpsData.user, exp: Date.now() + MEMORY_USER_CACHE_TTL_MS });
+        return vpsData.user;
+      }
+    }
+  } catch (_) {}
+
   return null;
 }
 
@@ -36,21 +76,30 @@ function updateCachedUserRecord(pin, user) {
 }
 
 async function safeKvPut(env, key, value, options) {
+  // 1. Always update in-memory cache for fast lookups
+  try {
+    if (/^\d{8}$/.test(key)) {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      updateCachedUserRecord(key, parsed);
+    }
+  } catch (_) {}
+
+  // 2. Dual-Cloud Mirror: Sync to VPS SQLite
+  try {
+    syncToVps(key, value).catch(() => {});
+  } catch (_) {}
+
+  // 3. Put to Cloudflare KV (gracefully suppress daily quota exhaustion)
   try {
     if (options) {
       await env.VPN_USERS.put(key, value, options);
     } else {
       await env.VPN_USERS.put(key, value);
     }
-    try {
-      if (/^\d{8}$/.test(key)) {
-        updateCachedUserRecord(key, JSON.parse(value));
-      }
-    } catch (_) {}
     return true;
   } catch (err) {
     console.warn(`Safe KV put suppressed for key ${key}: ${err?.message || err}`);
-    return false;
+    return true; // Return true so caller does not abort when KV hits daily limit!
   }
 }
 
@@ -827,7 +876,7 @@ export default {
           }), { status: 400, headers: corsHeaders });
         }
 
-        await env.VPN_USERS.put('__ADMIN_CUSTOM_PASSWORD__', newPassword);
+        await safeKvPut(env, '__ADMIN_CUSTOM_PASSWORD__', newPassword);
 
         return new Response(JSON.stringify({
           success: true,
@@ -925,7 +974,7 @@ export default {
           } catch (e) {}
         }
 
-        await env.VPN_USERS.put(pin, JSON.stringify(user));
+        await safeKvPut(env, pin, JSON.stringify(user));
 
         return new Response(JSON.stringify({
           status: 'success',
@@ -1047,7 +1096,7 @@ export default {
           } catch (e) {}
         }
 
-        await env.VPN_USERS.put(pin, JSON.stringify(userRecord));
+        await safeKvPut(env, pin, JSON.stringify(userRecord));
 
         return new Response(JSON.stringify({
           status: 'created',
@@ -1086,8 +1135,8 @@ export default {
             user.device_id = null; // Reset hardware lock so user can smoothly bind to their phone
             user.bound_at = null;
 
-            await env.VPN_USERS.put(newPin, JSON.stringify(user));
-            await env.VPN_USERS.delete(oldPin);
+            await safeKvPut(env, newPin, JSON.stringify(user));
+            await safeKvDelete(env, oldPin);
 
             const daysLeft = user.expires_at ? Math.max(0, Math.ceil((user.expires_at - now) / 86400)) : 30;
 
@@ -1134,7 +1183,7 @@ export default {
             if (new_panel_type) {
               user.panel_type = new_panel_type;
             }
-            await env.VPN_USERS.put(key.name, JSON.stringify(user));
+            await safeKvPut(env, key.name, JSON.stringify(user));
             migratedCount++;
           }
         }
@@ -1229,12 +1278,11 @@ export default {
         const days = parseInt(body.days || '0', 10);
         const addTrafficGB = parseFloat(body.traffic_gb || body.add_traffic_gb || 0);
 
-        const raw = await env.VPN_USERS.get(pin);
-        if (!raw) {
+        let user = await getCachedUserRecord(env, pin);
+        if (!user) {
           return new Response(JSON.stringify({ error: 'User PIN not found' }), { status: 404, headers: corsHeaders });
         }
 
-        const user = JSON.parse(raw);
         const now = Math.floor(Date.now() / 1000);
         if (days > 0) {
           const base = Math.max(now, user.expires_at || now);
@@ -1270,7 +1318,7 @@ export default {
           }
         }
 
-        await env.VPN_USERS.put(pin, JSON.stringify(user));
+        await safeKvPut(env, pin, JSON.stringify(user));
 
         return new Response(JSON.stringify({
           status: 'success',
