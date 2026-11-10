@@ -231,7 +231,7 @@ function getAdminDashboardHtml() {
             <h2 class="font-bold text-sm sm:text-lg leading-tight">آسان وی‌پی‌ان</h2>
             <span class="text-[10px] sm:text-xs text-emerald-400 flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              سامانه ابری کلودفلر
+              سامانه ابری آروان (ArvanCloud Edge)
             </span>
           </div>
         </div>
@@ -2200,24 +2200,103 @@ async function handleRequest(request) {
     });
   }
 
-  // 3. Proxy API requests to backend
+  // Debug headers endpoint
+  if (path === '/api/debug_headers') {
+    const rawHeaders = {};
+    try {
+      if (typeof request.headers.entries === 'function') {
+        for (const [k, v] of request.headers.entries()) {
+          rawHeaders[k] = v;
+        }
+      } else {
+        Object.assign(rawHeaders, request.headers);
+      }
+    } catch (e) {
+      rawHeaders['error'] = e.message;
+    }
+    return new Response(JSON.stringify({
+      rawHeaders,
+      get_x_admin_token: (typeof request.headers.get === 'function') ? request.headers.get('x-admin-token') : 'no get function'
+    }), { headers: { 'content-type': 'application/json' } });
+  }
+
+  // 3. Proxy API requests with Cloudflare Primary & VPS Fallback
   if (path.startsWith('/api/')) {
     try {
-      const targetUrl = new URL(url.pathname + url.search, 'https://asanvpn-worker.hi-deploy.workers.dev');
-      const newHeaders = new Headers(request.headers);
-      newHeaders.set('X-Forwarded-Host', url.hostname);
-      newHeaders.set('X-Edge-Provider', 'ArvanCloud');
+      let adminToken = '';
+      try {
+        if (request.headers) {
+          if (typeof request.headers.get === 'function') {
+            adminToken = request.headers.get('x-admin-token') || request.headers.get('X-Admin-Token') || '';
+          }
+          if (!adminToken && request.headers['x-admin-token']) {
+            adminToken = request.headers['x-admin-token'];
+          }
+          if (!adminToken && request.headers['X-Admin-Token']) {
+            adminToken = request.headers['X-Admin-Token'];
+          }
+        }
+      } catch (e) {}
 
-      const proxyRequest = new Request(targetUrl.toString(), {
-        method: request.method,
-        headers: newHeaders,
-        body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-        redirect: 'follow'
-      });
+      if (!adminToken) {
+        adminToken = url.searchParams.get('token') || url.searchParams.get('admin_token') || '';
+      }
 
-      const response = await fetch(proxyRequest);
+      const contentType = (request.headers.get && request.headers.get('content-type')) || 'application/json';
+
+      const outgoingHeaders = {
+        'Accept': 'application/json',
+        'Content-Type': contentType,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AsanVPN-Edge/1.0'
+      };
+      if (adminToken) {
+        outgoingHeaders['X-Admin-Token'] = adminToken;
+      }
+
+      // Clone or read body safely
+      let reqBody = undefined;
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        reqBody = await request.arrayBuffer();
+      }
+
+      const cfUrl = new URL(url.pathname + url.search, 'https://asanvpn-worker.hi-deploy.workers.dev');
+      const vpsUrl = new URL(url.pathname + url.search, 'http://95.182.87.115');
+
+      let response = null;
+      let lastErr = null;
+
+      // 1. Primary: Cloudflare Cloud KV Storage (Serverless & independent of any VPS filtering/changes)
+      try {
+        const cfResp = await fetch(cfUrl.toString(), {
+          method: request.method,
+          headers: outgoingHeaders,
+          body: reqBody
+        });
+        if (cfResp && (cfResp.status === 200 || cfResp.status === 204)) {
+          response = cfResp;
+        } else {
+          lastErr = new Error('Cloudflare returned status ' + (cfResp ? cfResp.status : 'null'));
+        }
+      } catch (e) {
+        lastErr = e;
+      }
+
+      // 2. Secondary Fallback: VPS Standalone SQLite (if Cloudflare KV is rate-limited or unavailable)
+      if (!response) {
+        try {
+          response = await fetch(vpsUrl.toString(), {
+            method: request.method,
+            headers: outgoingHeaders,
+            body: reqBody
+          });
+        } catch (e) {
+          throw new Error('Both Cloudflare and VPS failed: ' + (lastErr ? lastErr.message : '') + ' | ' + e.message);
+        }
+      }
+
       const respHeaders = new Headers(response.headers);
       respHeaders.set('Access-Control-Allow-Origin', '*');
+      respHeaders.set('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
       respHeaders.set('X-Served-By', 'ArvanCloud-Edge');
 
       return new Response(response.body, {
