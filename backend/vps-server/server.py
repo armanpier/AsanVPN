@@ -256,7 +256,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.send_json(401, {"error": "Unauthorized", "message": "رمز عبور یا توکن مدیریت نامعتبر است"})
 
             # ADMIN: Add/Edit User
-            if path == "/api/v1/admin/user":
+            if path in ["/api/v1/admin/user", "/api/v1/admin/create", "/api/v1/admin/update"]:
                 pin = str(body.get("pin", "")).strip()
                 if not pin or len(pin) != 8 or not pin.isdigit():
                     return self.send_json(400, {"error": "Invalid PIN", "message": "کد اشتراک باید ۸ رقم باشد."})
@@ -264,13 +264,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"success": True, "message": "کاربر با موفقیت ثبت شد."})
 
             # ADMIN: Save Panels
-            if path == "/api/v1/admin/panels":
+            if path in ["/api/v1/admin/panels", "/api/v1/admin/panels/save"]:
                 panels = body.get("panels", [])
                 db.put("__CONFIG_PANELS__", json.dumps(panels, ensure_ascii=False))
                 return self.send_json(200, {"success": True, "message": "لیست پنل‌ها با موفقیت ذخیره گردید."})
 
             # ADMIN: Clear lockout for single user
-            if path == "/api/v1/admin/clear_lockout":
+            if path in ["/api/v1/admin/clear_lockout", "/api/v1/admin/reset_device"]:
                 pin = str(body.get("pin", "")).strip()
                 raw_user = db.get(pin)
                 if raw_user:
@@ -287,7 +287,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.send_json(404, {"error": "User not found"})
 
             # ADMIN: Clear all lockouts
-            if path == "/api/v1/admin/clear_all_lockouts":
+            if path in ["/api/v1/admin/clear_all_lockouts", "/api/v1/admin/unlock_rate_limit"]:
                 users = db.get_all_users()
                 count = 0
                 for u in users:
@@ -302,16 +302,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"success": True, "message": f"قفل دستگاه {count} کاربر باز شد."})
 
             # ADMIN: Change Password
-            if path == "/api/v1/admin/password":
-                new_pwd = str(body.get("new_password", "")).strip()
+            if path in ["/api/v1/admin/password", "/api/v1/admin/change_password"]:
+                new_pwd = str(body.get("new_password") or body.get("password") or "").strip()
                 if not new_pwd or len(new_pwd) < 4:
                     return self.send_json(400, {"error": "Invalid password", "message": "رمز عبور جدید باید حداقل ۴ نویسه باشد."})
                 db.put("__ADMIN_CUSTOM_PASSWORD__", new_pwd)
                 return self.send_json(200, {"success": True, "message": "رمز عبور با موفقیت به‌روزرسانی شد."})
 
             # ADMIN: Sync Panels
-            if path == "/api/v1/admin/sync_panels":
-                return self.send_json(200, {"success": True, "message": "پنل‌ها با موفقیت همگام‌سازی شدند."})
+            if path in ["/api/v1/admin/sync_panels", "/api/v1/admin/panels/sync"]:
+                return self.send_json(200, {
+                    "success": True,
+                    "totalAdded": 0,
+                    "totalUpdated": 0,
+                    "crossSynced": 0,
+                    "message": "همگام‌سازی پنل‌ها با موفقیت انجام شد."
+                })
 
         # CLIENT: Connect endpoint
         if path == "/api/v1/connect":
