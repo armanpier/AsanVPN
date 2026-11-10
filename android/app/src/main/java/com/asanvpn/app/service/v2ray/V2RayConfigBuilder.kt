@@ -133,12 +133,10 @@ object V2RayConfigBuilder {
         })
         root.add("outbounds", outbounds)
 
-        // 4. DNS: Fast standard UDP resolvers with DoH TCP fallback
+        // 4. DNS: Fast standard UDP resolvers routed through proxy (universal Android 7+ compatibility)
         val dns = JsonObject().apply {
             addProperty("queryStrategy", "UseIPv4")
             val servers = JsonArray().apply {
-                add("https://1.1.1.1/dns-query")
-                add("https://8.8.8.8/dns-query")
                 add("1.1.1.1")
                 add("8.8.8.8")
             }

@@ -7,6 +7,34 @@ import { getAdminDashboardHtml } from './admin_ui.js';
 import { getWebAppHtml } from './webapp_ui.js';
 import { getOpenAppHtml } from './open_ui.js';
 
+// Module-level in-memory cache for Worker isolates to drastically reduce KV operations
+const memoryUserCache = new Map(); // pin -> { data: userObject, exp: timestamp }
+const MEMORY_USER_CACHE_TTL_MS = 120 * 1000; // 2 minutes in-memory cache per isolate
+
+async function getCachedUserRecord(env, pin) {
+  const cached = memoryUserCache.get(pin);
+  if (cached && Date.now() < cached.exp) {
+    return cached.data;
+  }
+  const raw = await env.VPN_USERS.get(pin);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      memoryUserCache.set(pin, { data: parsed, exp: Date.now() + MEMORY_USER_CACHE_TTL_MS });
+      return parsed;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function updateCachedUserRecord(pin, user) {
+  if (user) {
+    memoryUserCache.set(pin, { data: user, exp: Date.now() + MEMORY_USER_CACHE_TTL_MS });
+  } else {
+    memoryUserCache.delete(pin);
+  }
+}
+
 async function safeKvPut(env, key, value, options) {
   try {
     if (options) {
@@ -14,6 +42,11 @@ async function safeKvPut(env, key, value, options) {
     } else {
       await env.VPN_USERS.put(key, value);
     }
+    try {
+      if (/^\d{8}$/.test(key)) {
+        updateCachedUserRecord(key, JSON.parse(value));
+      }
+    } catch (_) {}
     return true;
   } catch (err) {
     console.warn(`Safe KV put suppressed for key ${key}: ${err?.message || err}`);
@@ -24,6 +57,7 @@ async function safeKvPut(env, key, value, options) {
 async function safeKvDelete(env, key) {
   try {
     await env.VPN_USERS.delete(key);
+    memoryUserCache.delete(key);
     return true;
   } catch (err) {
     console.warn(`Safe KV delete suppressed for key ${key}: ${err?.message || err}`);
@@ -350,26 +384,34 @@ export default {
 
         const now = Math.floor(Date.now() / 1000);
 
+        // Fetch user from in-memory cache or single KV read (eliminates 50% of user KV reads)
+        const user = await getCachedUserRecord(env, pin);
+
         // Check if admin cleared lockout for this user
         let userWasAdminUnlocked = false;
-        const rawUserPreview = await env.VPN_USERS.get(pin);
-        if (rawUserPreview) {
-          try {
-            const u = JSON.parse(rawUserPreview);
-            if (u.lockout_cleared === true || (u.lockout_cleared_at && u.lockout_cleared_at > (now - 86400))) {
-              userWasAdminUnlocked = true;
-            }
-          } catch (_) {}
+        if (user) {
+          if (user.lockout_cleared === true || (user.lockout_cleared_at && user.lockout_cleared_at > (now - 86400))) {
+            userWasAdminUnlocked = true;
+          }
         }
 
         // --- Rate Limiting: 3 wrong PIN attempts -> 30 minutes lockout ---
         const rlKey = `rl:${deviceId}`;
-        if (userWasAdminUnlocked) {
-          await safeKvDelete(env, rlKey);
+        let rlData = { count: 0, locked_until: 0 };
+        if (!userWasAdminUnlocked) {
+          const cachedRl = memoryUserCache.get(rlKey);
+          if (cachedRl && Date.now() < cachedRl.exp) {
+            rlData = cachedRl.data;
+          } else {
+            const rawRl = await env.VPN_USERS.get(rlKey);
+            if (rawRl) {
+              try {
+                rlData = JSON.parse(rawRl);
+                memoryUserCache.set(rlKey, { data: rlData, exp: Date.now() + 60000 });
+              } catch (_) {}
+            }
+          }
         }
-
-        const rawRl = userWasAdminUnlocked ? null : await env.VPN_USERS.get(rlKey);
-        let rlData = rawRl ? JSON.parse(rawRl) : { count: 0, locked_until: 0 };
 
         if (!userWasAdminUnlocked && rlData.locked_until && rlData.locked_until > now) {
           const remainingSec = rlData.locked_until - now;
@@ -384,13 +426,12 @@ export default {
           }), { status: 429, headers: corsHeaders });
         }
 
-        // Look up PIN in Cloudflare KV
-        const rawUser = await env.VPN_USERS.get(pin);
-        if (!rawUser) {
+        if (!user) {
           const count = (rlData.count || 0) + 1;
+          rlData.count = count;
           if (count >= 3) {
-            rlData.count = count;
             rlData.locked_until = now + 1800; // 30 minutes lockout
+            memoryUserCache.set(rlKey, { data: rlData, exp: Date.now() + 1800000 });
             await safeKvPut(env, rlKey, JSON.stringify(rlData), { expirationTtl: 3600 });
             return new Response(JSON.stringify({
               status: 'rate_limited',
@@ -401,7 +442,7 @@ export default {
               support_telegram: supportTelegram
             }), { status: 429, headers: corsHeaders });
           } else {
-            rlData.count = count;
+            memoryUserCache.set(rlKey, { data: rlData, exp: Date.now() + 60000 });
             await safeKvPut(env, rlKey, JSON.stringify(rlData), { expirationTtl: 3600 });
             const remaining = 3 - count;
             return new Response(JSON.stringify({
@@ -414,12 +455,11 @@ export default {
           }
         }
 
-        // PIN is valid! Clear rate limit for this device
-        if (rawRl) {
+        // PIN is valid! Clear rate limit only if it actually had failure attempts (avoids useless KV deletes)
+        if (rlData.count > 0 || userWasAdminUnlocked) {
+          memoryUserCache.delete(rlKey);
           await safeKvDelete(env, rlKey);
         }
-
-        const user = JSON.parse(rawUser);
 
         // Check if disabled
         if (user.active === false) {
@@ -525,12 +565,31 @@ export default {
               }
             }
             if (hasChanged) {
-              await safeKvPut(env, pin, JSON.stringify(user));
-              // Sync updated limits to other panels in the background
-              if (ctx && typeof ctx.waitUntil === 'function') {
-                ctx.waitUntil(PanelManager.syncUserLimitsToPanels(env, user));
-              } else {
-                PanelManager.syncUserLimitsToPanels(env, user).catch(() => {});
+              // Throttled KV write to strictly protect Cloudflare KV free tier (1,000 writes/day):
+              // Only persist to KV if traffic changed by > 50MB, or reached 0, or expiration changed,
+              // or more than 4 hours elapsed since last save.
+              const lastSave = user.last_kv_save_at || 0;
+              const timeSinceSave = now - lastSave;
+              const lastSavedTraffic = user.last_saved_traffic_bytes !== undefined ? user.last_saved_traffic_bytes : (user.traffic_remaining_bytes || 0);
+              const trafficDelta = Math.abs(lastSavedTraffic - (user.traffic_remaining_bytes || 0));
+
+              const isSignificant = trafficDelta > 50 * 1024 * 1024 ||
+                                    user.traffic_remaining_bytes === 0 ||
+                                    user.traffic_remaining_bytes === -1 ||
+                                    timeSinceSave > 14400; // 4 hours
+
+              updateCachedUserRecord(pin, user);
+
+              if (isSignificant) {
+                user.last_kv_save_at = now;
+                user.last_saved_traffic_bytes = user.traffic_remaining_bytes;
+                await safeKvPut(env, pin, JSON.stringify(user));
+                // Sync updated limits to other panels in the background
+                if (ctx && typeof ctx.waitUntil === 'function') {
+                  ctx.waitUntil(PanelManager.syncUserLimitsToPanels(env, user));
+                } else {
+                  PanelManager.syncUserLimitsToPanels(env, user).catch(() => {});
+                }
               }
             }
           }
@@ -544,12 +603,14 @@ export default {
           if (nodes && nodes.length > 0) {
             // Guarantee nodes are sorted by panel priority ascending
             nodes.sort((a, b) => (a.panel_priority || 99) - (b.panel_priority || 99));
-            const oldNodesStr = JSON.stringify(user.cached_nodes || []);
-            const newNodesStr = JSON.stringify(nodes);
-            if (oldNodesStr !== newNodesStr) {
+            // Only save cached_nodes to KV if missing (avoids rewriting KV on every connect)
+            if (!user.cached_nodes || user.cached_nodes.length === 0) {
               user.cached_nodes = nodes;
               await safeKvPut(env, pin, JSON.stringify(user));
+            } else {
+              user.cached_nodes = nodes;
             }
+            updateCachedUserRecord(pin, user);
           }
         } catch (fetchErr) {
           console.error('Failed to fetch from panel:', fetchErr);

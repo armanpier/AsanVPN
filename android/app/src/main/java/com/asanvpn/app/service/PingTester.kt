@@ -139,11 +139,11 @@ object PingTester {
             AppLogger.logAdmin(">> [Cascade FAILOVER] Tier $tier timed out. Cascading to next tier.")
         }
 
-        // If ALL priority tiers failed real delay test, fallback to first candidate of highest priority tier
-        if (firstConnected.compareAndSet(false, true)) {
-            val fallback = candidatePool[0]
-            Log.w(TAG, ">> [Cascade EXHAUSTED] No node in any tier passed real delay; using emergency fallback [${fallback.remark}]")
-            onFirstOkNode(fallback)
+        // If ALL priority tiers failed real delay test, NEVER fake a connection! Keep disconnected.
+        if (!firstConnected.get()) {
+            Log.w(TAG, ">> [Cascade EXHAUSTED] All nodes across all tiers failed real delay test.")
+            AppLogger.logUser("❌ هیچ سرور فعالی پاسخ نداد. لطفاً وضعیت اینترنت را بررسی نمایید.")
+            AppLogger.logAdmin("Cascade EXHAUSTED. All candidate nodes timed out.")
         }
     }
 

@@ -139,12 +139,12 @@ class AsanVpnService : VpnService() {
             isRunning = true
             prefs.isConnected = true
 
-            // Periodic session check: if PIN is deleted or disabled on server while connected, kill tunnel immediately
+            // Periodic session check: passive validation every 30 minutes to save battery & Cloudflare API limits
             sessionValidatorJob?.cancel()
             sessionValidatorJob = serviceScope.launch {
                 val repo = VpnRepository(this@AsanVpnService)
                 while (isRunning && isActive) {
-                    kotlinx.coroutines.delay(25000L)
+                    kotlinx.coroutines.delay(1800_000L) // 30 minutes
                     val pin = prefs.savedPin
                     if (pin.isNullOrBlank()) {
                         Log.i("AsanVpnService", "No saved PIN found, stopping VPN tunnel")
@@ -208,7 +208,7 @@ class AsanVpnService : VpnService() {
         }
 
         try {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForeground(true)
         } catch (e: Exception) {
             // Ignore
         }
@@ -238,17 +238,20 @@ class AsanVpnService : VpnService() {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val openAppPendingIntent = PendingIntent.getActivity(
-            this, 0, openAppIntent,
+        val piFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val openAppPendingIntent = PendingIntent.getActivity(
+            this, 0, openAppIntent, piFlags
         )
 
         val disconnectIntent = Intent(this, AsanVpnService::class.java).apply {
             action = ACTION_DISCONNECT
         }
         val disconnectPendingIntent = PendingIntent.getService(
-            this, 1, disconnectIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            this, 1, disconnectIntent, piFlags
         )
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)

@@ -13,6 +13,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionSpec
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -20,6 +21,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.InetAddress
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import com.asanvpn.app.data.VpnRepository.Android7CompatTrustManager
+import com.asanvpn.app.data.VpnRepository.Tls12SocketFactory
 
 data class AppVersionInfo(
     val versionCode: Int,
@@ -55,9 +59,15 @@ object AppUpdateManager {
     }
 
     private val httpClient: OkHttpClient by lazy {
+        val trustManager = Android7CompatTrustManager()
+        val sslContext = SSLContext.getInstance("TLS")
+        sslContext.init(null, arrayOf(trustManager), null)
+
         OkHttpClient.Builder()
+            .sslSocketFactory(Tls12SocketFactory(sslContext.socketFactory), trustManager)
+            .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
             .dns(ResilientDns())
-            .connectTimeout(12, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)

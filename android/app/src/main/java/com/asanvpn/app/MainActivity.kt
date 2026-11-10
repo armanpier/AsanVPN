@@ -77,9 +77,12 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             startVpnServiceInternal()
+            connectionState = ConnectionState.CONNECTED
+            prefs.isConnected = true
             startTrafficMonitoring()
         } else {
             connectionState = ConnectionState.DISCONNECTED
+            prefs.isConnected = false
             Toast.makeText(this, "مجوز اتصال برای روشن شدن برنامه الزامی است", Toast.LENGTH_LONG).show()
         }
     }
@@ -458,8 +461,6 @@ class MainActivity : ComponentActivity() {
                                 if (!this@launch.isActive) return@connectFastAndOptimize
                                 withContext(Dispatchers.Main) {
                                     if (connectionState != ConnectionState.CONNECTING) return@withContext
-                                    connectionState = ConnectionState.CONNECTED
-                                    prefs.isConnected = true
                                     initialConnectedNode = firstNode
                                     prefs.selectedServerRemark = firstNode.remark
                                     currentServerRemark = firstNode.remark
@@ -476,8 +477,10 @@ class MainActivity : ComponentActivity() {
                                         vpnPermissionLauncher.launch(intent)
                                     } else {
                                         startVpnServiceInternal(configJson)
+                                        connectionState = ConnectionState.CONNECTED
+                                        prefs.isConnected = true
+                                        startTrafficMonitoring()
                                     }
-                                    startTrafficMonitoring()
                                 }
                             },
                             onFastestNodeFound = { fastestNode ->
@@ -504,6 +507,15 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         )
+
+                        // If waterfall evaluation finished and no node passed delay test, disconnect gracefully (NEVER leave green!)
+                        if (connectionState == ConnectionState.CONNECTING) {
+                            withContext(Dispatchers.Main) {
+                                connectionState = ConnectionState.DISCONNECTED
+                                prefs.isConnected = false
+                                Toast.makeText(this@MainActivity, "هیچ سرور فعالی پاسخ نداد. لطفاً وضعیت اینترنت را بررسی فرمایید.", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     }
                 }.onFailure { error ->
                     if (!isActive || connectionState != ConnectionState.CONNECTING) return@onFailure

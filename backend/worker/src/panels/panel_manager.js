@@ -256,8 +256,21 @@ export const DEFAULT_INITIAL_PANELS = [
   }
 ];
 
+let cachedPanels = null;
+let cachedPanelsExpiry = 0;
+
 export class PanelManager {
+  static invalidatePanelsCache() {
+    cachedPanels = null;
+    cachedPanelsExpiry = 0;
+  }
+
   static async getPanels(env) {
+    const now = Date.now();
+    if (cachedPanels && now < cachedPanelsExpiry) {
+      return cachedPanels;
+    }
+
     const raw = await env.VPN_USERS.get('__CONFIG_PANELS__');
     let panels = DEFAULT_INITIAL_PANELS;
     let needsSave = false;
@@ -317,6 +330,8 @@ export class PanelManager {
       await env.VPN_USERS.put('__CONFIG_PANELS__', JSON.stringify(panels));
     }
 
+    cachedPanels = panels;
+    cachedPanelsExpiry = now + 600000; // Cache in isolate memory for 10 minutes
     return panels;
   }
 
@@ -325,6 +340,8 @@ export class PanelManager {
       panels.sort((a, b) => (a.priority || 99) - (b.priority || 99));
     }
     await env.VPN_USERS.put('__CONFIG_PANELS__', JSON.stringify(panels));
+    cachedPanels = panels;
+    cachedPanelsExpiry = Date.now() + 600000;
   }
 
   static async addOrUpdatePanel(env, panelData) {

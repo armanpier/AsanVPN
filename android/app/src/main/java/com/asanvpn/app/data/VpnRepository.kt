@@ -12,6 +12,7 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionSpec
 import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,8 +21,16 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.KeyStore
+import java.security.cert.CertificateException
+import java.security.cert.X509Certificate
 import java.util.Collections
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 
 class AuthRevokedException(val status: String, override val message: String) : Exception(message)
 
@@ -158,11 +167,75 @@ class VpnRepository(private val context: Context) {
         }
     }
 
-    private val client = OkHttpClient.Builder()
-        .dns(ResilientDns())
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    class Android7CompatTrustManager : X509TrustManager {
+        private val defaultTrustManager: X509TrustManager by lazy {
+            val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+            tmf.init(null as KeyStore?)
+            tmf.trustManagers.first { it is X509TrustManager } as X509TrustManager
+        }
+
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+            try {
+                defaultTrustManager.checkClientTrusted(chain, authType)
+            } catch (_: Exception) {}
+        }
+
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+            try {
+                defaultTrustManager.checkServerTrusted(chain, authType)
+            } catch (e: CertificateException) {
+                // Support Android 7.0 devices where ISRG Root X1 was missing from system trust store
+                val isTrustedCa = chain?.any { cert ->
+                    val dn = cert.subjectDN?.name ?: ""
+                    dn.contains("ISRG Root", ignoreCase = true) ||
+                    dn.contains("Let's Encrypt", ignoreCase = true) ||
+                    dn.contains("Cloudflare", ignoreCase = true) ||
+                    dn.contains("Google Trust Services", ignoreCase = true)
+                } == true
+                if (!isTrustedCa) {
+                    throw e
+                }
+            }
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = defaultTrustManager.acceptedIssuers
+    }
+
+    class Tls12SocketFactory(private val delegate: SSLSocketFactory) : SSLSocketFactory() {
+        override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
+        override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
+
+        override fun createSocket(s: Socket, host: String, port: Int, autoClose: Boolean): Socket = patch(delegate.createSocket(s, host, port, autoClose))
+        override fun createSocket(host: String, port: Int): Socket = patch(delegate.createSocket(host, port))
+        override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket = patch(delegate.createSocket(host, port, localHost, localPort))
+        override fun createSocket(host: InetAddress, port: Int): Socket = patch(delegate.createSocket(host, port))
+        override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket = patch(delegate.createSocket(address, port, localAddress, localPort))
+
+        private fun patch(s: Socket): Socket {
+            if (s is SSLSocket) {
+                try {
+                    s.enabledProtocols = arrayOf("TLSv1.2", "TLSv1.3")
+                } catch (_: Exception) {
+                    try { s.enabledProtocols = arrayOf("TLSv1.2") } catch (_: Exception) {}
+                }
+            }
+            return s
+        }
+    }
+
+    private val client: OkHttpClient by lazy {
+        val trustManager = Android7CompatTrustManager()
+        val sslContext = SSLContext.getInstance("TLS")
+        sslContext.init(null, arrayOf(trustManager), null)
+
+        OkHttpClient.Builder()
+            .sslSocketFactory(Tls12SocketFactory(sslContext.socketFactory), trustManager)
+            .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
+            .dns(ResilientDns())
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
 
     private fun sec(encoded: String): String {
         return try {
@@ -205,16 +278,6 @@ class VpnRepository(private val context: Context) {
         var isPinRejected = false
         var rejectionMessageFa: String? = null
 
-        val activeClient = if (com.asanvpn.app.service.AsanVpnService.isRunning) {
-            client.newBuilder()
-                .proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("127.0.0.1", 10809)))
-                .connectTimeout(6, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .build()
-        } else {
-            client
-        }
-
         for (baseUrl in workerEndpoints) {
             val url = "$baseUrl/api/v1/connect"
             val maskedUrl = url.replace(Regex("://[^/]+"), "://***")
@@ -226,15 +289,7 @@ class VpnRepository(private val context: Context) {
                     .header("User-Agent", "AsanVPN-Android/1.0.0")
                     .build()
 
-                val callResponse = try {
-                    activeClient.newCall(req).execute()
-                } catch (e: Exception) {
-                    if (activeClient != client) {
-                        client.newCall(req).execute()
-                    } else {
-                        throw e
-                    }
-                }
+                val callResponse = client.newCall(req).execute()
 
                 callResponse.use { response ->
                     val responseStr = response.body?.string() ?: ""
@@ -343,32 +398,11 @@ class VpnRepository(private val context: Context) {
                 }
             }
 
-            // Fallback 2: Bootstrap proxies for first-time connection & PIN authentication
-            AppLogger.logUser("🔄 استفاده از سرورهای راه‌انداز موقت")
-            AppLogger.logAdmin("Serving fallback bootstrap Reality nodes")
-            val bootstrap = getBootstrapNodes()
-            return@withContext Result.success(
-                ConnectResponse(
-                    status = "success",
-                    messageFa = null,
-                    supportPhone = prefs.supportPhone,
-                    supportTelegram = prefs.supportTelegram,
-                    retryAfterSeconds = null,
-                    lockedUntilTimestamp = null,
-                    userInfo = UserInfo(
-                        name = prefs.userName,
-                        daysLeft = prefs.daysLeft,
-                        trafficRemainingBytes = prefs.trafficRemainingBytes,
-                        trafficTotalBytes = prefs.trafficTotalBytes,
-                        supportPhone = prefs.supportPhone,
-                        supportTelegram = prefs.supportTelegram,
-                        isAdmin = prefs.isAdmin
-                    ),
-                    nodes = bootstrap,
-                    xrayConfig = null,
-                    singboxConfig = null
-                )
-            )
+            // When no live connection is available and no cached nodes exist, report actual network error
+            // (never return fake success or dummy quota)
+            AppLogger.logUser("❌ امکان برقراری ارتباط با سرور اشتراک وجود ندارد")
+            AppLogger.logAdmin("syncWithWorker failed: No live connection and no cached nodes")
+            return@withContext Result.failure(Exception("خطا در برقراری ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی کرده و مجدداً تلاش فرمایید."))
         }
     }
 
