@@ -152,31 +152,25 @@ object V2RayConfigBuilder {
                     addProperty("port", "53")
                 })
 
-                // Rule 1: Direct Iranian domains
+                // Rule 1: Direct Iranian domains (Chocolate4Iran geosite rules)
                 add(JsonObject().apply {
                     addProperty("type", "field")
                     addProperty("outboundTag", "direct")
                     val domainArr = JsonArray().apply {
+                        add("geosite:category-ir")
+                        add("geosite:ir")
                         add("domain:ir")
-                        add("domain:shaparak.ir")
-                        add("domain:blubank.sb24.ir")
-                        add("domain:divar.ir")
-                        add("domain:snapp.ir")
-                        add("domain:torob.com")
-                        add("domain:digikala.com")
-                        add("domain:rubika.ir")
-                        add("domain:bale.ai")
-                        add("domain:eitaa.com")
                     }
                     add("domain", domainArr)
                 })
 
-                // Rule 2: Direct private LAN
+                // Rule 2: Direct private LAN & Iran IP ranges (Chocolate4Iran geoip rules)
                 add(JsonObject().apply {
                     addProperty("type", "field")
                     addProperty("outboundTag", "direct")
                     val ipArr = JsonArray().apply {
                         add("geoip:private")
+                        add("geoip:ir")
                     }
                     add("ip", ipArr)
                 })

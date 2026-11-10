@@ -78,7 +78,7 @@ object PingTester {
 
             Log.i(TAG, "==> [Priority Cascade] Testing Priority Tier $tier ($tierName) with ${tierNodes.size} candidate nodes (timeout: ${realDelayTimeout}ms)...")
             AppLogger.logUser("🔍 بررسی سرورهای $tierName...")
-            AppLogger.logAdmin("Testing Tier $tier ($tierName) with ${tierNodes.size} nodes: ${tierNodes.map { "${it.remark} (${it.server}:${it.port})" }}")
+            AppLogger.logAdmin("Testing Tier $tier ($tierName) with ${tierNodes.size} nodes")
 
             // Parallel TCP prescan for this tier to identify responsive endpoints
             val tcpResults = tierNodes.map { node ->
@@ -98,16 +98,15 @@ object PingTester {
                         val realDelay = measureRealDelay(node, realDelayTimeout)
                         node.latencyMs = realDelay
                         if (realDelay in 1 until bestLatency.get()) {
-                            Log.i(TAG, "Tier $tier Verified OK: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms")
-                            AppLogger.logUser("⚡ تست موفق سرور [${node.remark}] — پینگ: ${realDelay}ms")
-                            AppLogger.logAdmin("Tier $tier OK: [${node.remark}] (${node.server}:${node.port}) -> REAL latency: ${realDelay}ms (protocol: ${node.protocol}, security: ${node.security})")
+                            Log.i(TAG, "Tier $tier Verified OK: [${node.remark}] -> REAL latency: ${realDelay}ms")
+                            AppLogger.logLinkTest(node.remark, realDelay, isSuccess = true)
 
                             if (firstConnected.compareAndSet(false, true)) {
                                 bestNode = node
                                 bestLatency.set(realDelay)
                                 Log.i(TAG, ">> [Cascade SUCCESS] Connecting immediately to Priority Tier $tier server [${node.remark}] (${realDelay}ms)")
                                 AppLogger.logUser("🚀 انتخاب سرور پایدار [${node.remark}]")
-                                AppLogger.logAdmin("Cascade SUCCESS. Assigned node [${node.remark}] (${node.server}:${node.port})")
+                                AppLogger.logAdmin("Cascade SUCCESS. Assigned node [${node.remark}]")
                                 onFirstOkNode(node)
                             } else if (realDelay < bestLatency.get() - 25L) {
                                 val prevRemark = bestNode?.remark ?: "unknown"
@@ -121,8 +120,7 @@ object PingTester {
                             }
                         } else {
                             Log.d(TAG, "Tier $tier candidate failed: [${node.remark}]")
-                            AppLogger.logUser("⚠️ سرور [${node.remark}] در دسترس نیست")
-                            AppLogger.logAdmin("Tier $tier candidate FAILED: [${node.remark}] (${node.server}:${node.port})")
+                            AppLogger.logLinkTest(node.remark, -1L, isSuccess = false)
                         }
                     }
                 }

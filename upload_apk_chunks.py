@@ -32,7 +32,7 @@ meta = {
     'chunk_size': chunk_size,
     'filename': 'AsanVPN-v1.3.4-universal.apk',
     'sha256': hasher.hexdigest(),
-    'changelog': 'رفع مشکل مسدودی ۳۰ دقیقه‌ای ورود، امکان بازگشایی آنی توسط پنل آسان داشبورد، و اتصال پایدار به سرورهای با اولویت بالا'
+    'changelog': 'محدودسازی لاگ به ۱۰۰ سطر، خلاصه‌سازی تست پینگ لینک‌ها، روتینگ مستقیم آی‌پی‌ها و دامنه‌های ایران با Chocolate4Iran و بای‌پس ۸۲ برنامه ایرانی (نوبیتکس، آپ، بازار و بانک‌ها)'
 }
 
 meta_file = os.path.join(out_dir, 'meta.json')

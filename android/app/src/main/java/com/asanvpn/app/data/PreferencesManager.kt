@@ -65,6 +65,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_LOCKOUT_UNTIL = "lockout_until_timestamp"
         private const val KEY_TRAFFIC_REMAINING = "saved_traffic_remaining_bytes"
         private const val KEY_TRAFFIC_TOTAL = "saved_traffic_total_bytes"
+        private const val KEY_LAST_GEO_RULES_CHECK = "last_geo_rules_check_timestamp"
     }
 
     var trafficTotalBytes: Long
@@ -133,6 +134,10 @@ class PreferencesManager(context: Context) {
             return prefs.getBoolean(KEY_IS_ADMIN, false)
         }
         set(value) = prefs.edit().putBoolean(KEY_IS_ADMIN, value).apply()
+
+    var lastGeoRulesCheckTime: Long
+        get() = prefs.getLong(KEY_LAST_GEO_RULES_CHECK, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_GEO_RULES_CHECK, value).apply()
 
     fun clearAll() {
         prefs.edit().clear().apply()

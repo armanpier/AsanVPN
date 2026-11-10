@@ -198,14 +198,17 @@ class VpnRepository(private val context: Context) {
             .toRequestBody("application/json; charset=utf-8".toMediaType())
 
         AppLogger.logUser("📡 در حال استعلام وضعیت اشتراک...")
-        AppLogger.logAdmin("Sync initiated for PIN: $pin (Device: $deviceId)")
+        val maskedPin = if (pin.length > 2) "***${pin.takeLast(2)}" else "***"
+        val maskedDev = if (deviceId.length > 4) "***${deviceId.takeLast(4)}" else "***"
+        AppLogger.logAdmin("Sync initiated for PIN: $maskedPin (Device: $maskedDev)")
 
         var isPinRejected = false
         var rejectionMessageFa: String? = null
 
         for (baseUrl in workerEndpoints) {
             val url = "$baseUrl/api/v1/connect"
-            AppLogger.logAdmin("Connecting to route: $url")
+            val maskedUrl = url.replace(Regex("://[^/]+"), "://***")
+            AppLogger.logAdmin("Connecting to route: $maskedUrl")
             try {
                 val req = Request.Builder()
                     .url(url)
@@ -249,7 +252,7 @@ class VpnRepository(private val context: Context) {
                         }
                         val count = parsed.nodes?.size ?: 0
                         AppLogger.logUser("✅ مشخصات اشتراک تایید شد (${count} سرور دریافت گردید)")
-                        AppLogger.logAdmin("Connect SUCCESS. Nodes: $count. Raw response: $responseStr")
+                        AppLogger.logAdmin("Connect SUCCESS. Received $count subscription nodes.")
                         return@withContext Result.success(parsed)
                     } else if (parsed != null && (parsed.status == "invalid_pin" || parsed.status == "disabled" || parsed.status == "expired" || parsed.status == "deleted" || parsed.status == "device_locked")) {
                         isPinRejected = true
@@ -260,7 +263,7 @@ class VpnRepository(private val context: Context) {
                             else -> "کد اشتراک نامعتبر است یا توسط مدیر حذف شده است."
                         }
                         AppLogger.logUser("❌ وضعیت اشتراک: $rejectionMessageFa")
-                        AppLogger.logAdmin("Auth Rejected: HTTP ${response.code} | Status: ${parsed.status} | $responseStr")
+                        AppLogger.logAdmin("Auth Rejected: HTTP ${response.code} | Status: ${parsed.status}")
                         return@withContext Result.failure(AuthRevokedException(parsed.status, rejectionMessageFa))
                     } else if (parsed != null && (response.code == 429 || parsed.status == "rate_limited")) {
                         isPinRejected = true
@@ -269,16 +272,16 @@ class VpnRepository(private val context: Context) {
                         prefs.failedPinAttempts = 3
                         rejectionMessageFa = parsed.messageFa ?: "تعداد تلاش‌ها بیش از حد مجاز است. لطفاً ۳۰ دقیقه دیگر تلاش کنید."
                         AppLogger.logUser("⚠️ محدودیت تلاش: بیش از حد مجاز")
-                        AppLogger.logAdmin("Rate limited: $responseStr")
+                        AppLogger.logAdmin("Rate limited: HTTP ${response.code} | Status: ${parsed.status}")
                         return@withContext Result.failure(Exception(rejectionMessageFa))
                     } else {
                         AppLogger.logUser("⚠️ دریافت پاسخ غیرمنتظره از سرور (${response.code})")
-                        AppLogger.logAdmin("Server returned non-success: ${response.code} / ${parsed?.status}: $responseStr")
+                        AppLogger.logAdmin("Server returned non-success: HTTP ${response.code} | Status: ${parsed?.status}")
                     }
                 }
             } catch (e: Exception) {
                 AppLogger.logUser("⚠️ در حال ارزیابی مسیرهای ارتباطی شبکه...")
-                AppLogger.logAdmin("Route attempt failed: ${e.javaClass.simpleName} - ${e.message}")
+                AppLogger.logAdmin("syncWithWorker error: ${e.javaClass.simpleName} - ${e.message?.replace(Regex("[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"), "***") ?: "unknown"}")
             }
         }
 
@@ -382,7 +385,7 @@ class VpnRepository(private val context: Context) {
                             prefs.lockoutUntil = 0L
                             prefs.failedPinAttempts = 0
                             AppLogger.logUser("🔓 قفل ۳۰ دقیقه‌ای با موفقیت برطرف شد")
-                            AppLogger.logAdmin("Lockout cleared via check_lockout: $respStr")
+                            AppLogger.logAdmin("Lockout cleared via check_lockout: HTTP ${response.code} | Status: ${parsed?.status}")
                             return@withContext Result.success(true)
                         } else {
                             if (parsed?.locked == true && (parsed.remainingSeconds ?: 0L) > 0L) {
@@ -393,7 +396,8 @@ class VpnRepository(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                AppLogger.logAdmin("check_lockout error for $baseUrl: ${e.message}")
+                val maskedBaseUrl = baseUrl.replace(Regex("://[^/]+"), "://***")
+                AppLogger.logAdmin("check_lockout error for $maskedBaseUrl: ${e.javaClass.simpleName}")
             }
         }
         Result.failure(Exception("خطا در ارتباط با سرور"))

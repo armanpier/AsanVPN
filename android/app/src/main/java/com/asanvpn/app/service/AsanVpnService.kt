@@ -16,6 +16,7 @@ import com.asanvpn.app.MainActivity
 import com.asanvpn.app.data.PreferencesManager
 import com.asanvpn.app.data.VpnRepository
 import com.asanvpn.app.service.v2ray.V2RayCoreManager
+import com.asanvpn.app.util.IranAppBypassHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -116,6 +117,9 @@ class AsanVpnService : VpnService() {
             } catch (e: Exception) {
                 Log.w("AsanVpnService", "Could not set addDisallowedApplication: ${e.message}")
             }
+
+            // Exclude Iranian domestic applications from tunnel routing
+            IranAppBypassHelper.applyDisallowedApplications(builder, this)
 
             vpnInterface = builder.establish()
             if (vpnInterface == null) {

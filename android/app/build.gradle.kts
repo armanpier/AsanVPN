@@ -71,6 +71,12 @@ android {
             excludes += "META-INF/com/android/build/gradle/app-metadata.properties"
         }
     }
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+            isIncludeAndroidResources = false
+        }
+    }
 }
 
 dependencies {
@@ -98,4 +104,48 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
+
+tasks.withType<Test> {
+    jvmArgs(
+        "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+        "--add-opens", "java.base/java.lang=ALL-UNNAMED"
+    )
+    testLogging {
+        events("passed", "skipped", "failed", "standardOut", "standardError")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+tasks.register<JavaExec>("runEmpiricalTests") {
+    group = "verification"
+    description = "Direct JVM empirical test suite runner"
+    val debugUnitTestCompile = tasks.named("compileDebugUnitTestKotlin")
+    val debugUnitTestJavaCompile = tasks.named("compileDebugUnitTestJavaWithJavac")
+    dependsOn(debugUnitTestCompile, debugUnitTestJavaCompile)
+
+    val androidJar = file("${android.sdkDirectory}/platforms/android-${android.compileSdk}/android.jar")
+    classpath = files(
+        layout.buildDirectory.dir("intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest"),
+        layout.buildDirectory.dir("intermediates/javac/debug/compileDebugJavaWithJavac/classes"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+        androidJar,
+        configurations.getByName("debugRuntimeClasspath"),
+        configurations.getByName("debugUnitTestRuntimeClasspath")
+    )
+    jvmArgs(
+        "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+        "--add-opens", "java.base/java.lang=ALL-UNNAMED"
+    )
+    mainClass.set("com.asanvpn.app.AllEmpiricalTestSuiteRunner")
+}
+
+tasks.named("check") {
+    dependsOn("runEmpiricalTests")
+}
+

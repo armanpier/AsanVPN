@@ -25,6 +25,7 @@ import com.asanvpn.app.ui.screens.PinScreen
 import com.asanvpn.app.ui.theme.AsanVpnTheme
 import com.asanvpn.app.util.AppUpdateManager
 import com.asanvpn.app.util.AppVersionInfo
+import com.asanvpn.app.util.GeoAssetManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -107,6 +108,9 @@ class MainActivity : ComponentActivity() {
         // Initialize V2Ray Core environment at startup
         com.asanvpn.app.service.v2ray.V2RayCoreManager.initCore(applicationContext)
 
+        // Ensure Chocolate4Iran GeoIP/GeoSite assets are initialized
+        GeoAssetManager.ensureAssetsInitialized(applicationContext)
+
         // Keep connection state reactive to the real VPN service lifecycle
         lifecycleScope.launch {
             AsanVpnService.vpnRunningState.collect { running ->
@@ -134,6 +138,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             kotlinx.coroutines.delay(2000L)
             triggerCheckForUpdate(manual = false)
+        }
+
+        // Background check for Chocolate4Iran routing rules after 5 seconds
+        lifecycleScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(5000L)
+            GeoAssetManager.checkAndUpdateRules(applicationContext, force = false)
         }
 
         // Periodic background session check while app is open
@@ -401,7 +411,8 @@ class MainActivity : ComponentActivity() {
             val pin = prefs.savedPin ?: return
 
             AppLogger.logUser("🔄 درخواست برقراری ارتباط...")
-            AppLogger.logAdmin("Toggle connect initiated for PIN: $pin")
+            val maskedPin = if (pin.length > 2) "***${pin.takeLast(2)}" else "***"
+            AppLogger.logAdmin("Toggle connect initiated for PIN: $maskedPin")
 
             connectJob?.cancel()
             connectJob = lifecycleScope.launch {

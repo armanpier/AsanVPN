@@ -13,7 +13,7 @@ import java.util.Locale
 object AppLogger {
     private val userLogs = mutableListOf<String>()
     private val adminLogs = mutableListOf<String>()
-    private const val MAX_LOG_ENTRIES = 200
+    private const val MAX_LOG_ENTRIES = 100
 
     @Synchronized
     fun logUser(message: String) {
@@ -30,6 +30,16 @@ object AppLogger {
         val entry = "[$time] [ADMIN] $message"
         adminLogs.add(entry)
         trim()
+    }
+
+    @Synchronized
+    fun logLinkTest(remark: String, latencyMs: Long, isSuccess: Boolean) {
+        val entry = if (isSuccess) {
+            "⚡ [$remark] — پینگ: ${latencyMs}ms (موفق)"
+        } else {
+            "⚠️ [$remark] — پینگ: تایم‌اوت (ناموفق)"
+        }
+        logUser(entry)
     }
 
     @Synchronized
