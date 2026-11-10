@@ -1,0 +1,13 @@
+<resources>
+    <color name="bg_dark">#121418</color>
+    <color name="card_dark">#1E222A</color>
+    <color name="red_disconnect">#E53935</color>
+    <color name="red_disconnect_glow">#40E53935</color>
+    <color name="amber_connecting">#FFB300</color>
+    <color name="green_connected">#2E7D32</color>
+    <color name="green_connected_glow">#402E7D32</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0BEC5</color>
+    <color name="button_keypad">#282E3A</color>
+    <color name="ic_launcher_background">#F6F7F9</color>
+</resources>

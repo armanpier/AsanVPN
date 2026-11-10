@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name">آسان وی‌پی‌ان</string>
+    
+    <!-- PIN Screen -->
+    <string name="pin_title">کد ۴ رقمی خود را وارد کنید</string>
+    <string name="pin_subtitle">کدی که از پشتیبانی دریافت کرده‌اید را با صفحه کلید زیر لمس کنید</string>
+    <string name="pin_loading">در حال بررسی کد اشتراک...</string>
+    
+    <!-- Connect Screen -->
+    <string name="vpn_state_disconnected">خاموش</string>
+    <string name="vpn_state_disconnected_sub">برای اتصال به اینترنت، دکمه را لمس کنید</string>
+    
+    <string name="vpn_state_connecting">در حال اتصال...</string>
+    <string name="vpn_state_connecting_sub">لطفاً چند لحظه صبر کنید</string>
+    
+    <string name="vpn_state_connected">روشن</string>
+    <string name="vpn_state_connected_sub">اینترنت امن و فعال است</string>
+    
+    <string name="user_welcome">سلام %1$s</string>
+    <string name="days_remaining">%1$d روز اعتبار باقی مانده</string>
+    
+    <!-- Support & Actions -->
+    <string name="action_support">تماس با پشتیبانی و تمدید</string>
+    <string name="action_disconnect">قطع اتصال</string>
+    <string name="action_connect">اتصال</string>
+    <string name="action_exit_account">خروج از حساب (تغییر کد)</string>
+    
+    <!-- Expiry Overlay -->
+    <string name="expired_title">اشتراک به پایان رسید</string>
+    <string name="expired_desc">برای تمدید و فعال‌سازی مجدد، کافیست دکمه زیر را لمس کرده و با پشتیبانی تماس بگیرید.</string>
+    <string name="expired_button">تماس تلفنی با پشتیبانی</string>
+    
+    <!-- Notifications -->
+    <string name="notification_title">آسان وی‌پی‌ان فعال است</string>
+    <string name="notification_content">اینترنت گوشی شما محافظت شده و امن است</string>
+</resources>
