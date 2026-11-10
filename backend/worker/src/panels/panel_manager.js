@@ -1381,11 +1381,11 @@ export class PanelManager {
           updatedCount++;
         }
       } else {
-        // Generate a new unique 8-digit PIN
+        // Generate a new unique 10-digit PIN
         let pin = null;
         let attempts = 0;
         while (attempts < 30) {
-          const cand = String(Math.floor(10000000 + Math.random() * 90000000));
+          const cand = String(Math.floor(1000000000 + Math.random() * 9000000000));
           const hasInMemory = existingUsers.some(u => u.pin === cand);
           if (!hasInMemory) {
             const hasInKv = await env.VPN_USERS.get(cand);

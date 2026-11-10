@@ -11,6 +11,7 @@ import json
 import sqlite3
 import time
 import logging
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 import urllib.parse
@@ -27,17 +28,135 @@ SUPPORT_TELEGRAM = "AsanSupport"
 APP_VERSION = "1.3.10"
 APP_VERSION_CODE = 16
 GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk"
+EDGE_SECRET = "asanvpn-edge-internal-secret-2026"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+# Rate limiting storage for failed authentication attempts (IP and Device level)
+RATE_LIMIT_STORE = {} # key -> {"count": int, "locked_until": int}
+RATE_LIMIT_LOCK = threading.Lock()
+
+def get_ip_subnet(ip: str) -> str:
+    """Calculates IPv4 /24 subnet or returns clean IP. Excludes reverse proxy/internal addresses."""
+    if not ip or ip in ("unknown", "127.0.0.1", "::1", "localhost"):
+        return ""
+    # Avoid locking entire ArvanCloud edge reverse proxies if client IP could not be extracted
+    if ip.startswith("37.32.") or ip.startswith("185.143."):
+        return ""
+    if "." in ip:
+        parts = ip.split(".")
+        if len(parts) >= 3:
+            return ".".join(parts[:3]) + ".0/24"
+    return ip
+
+def check_rate_limit(ip_key: str, dev_key: str) -> tuple:
+    """Check if either IP or Device is locked out. Returns (is_locked, remaining_seconds)."""
+    now = int(time.time())
+    with RATE_LIMIT_LOCK:
+        for k in [ip_key, dev_key]:
+            if k and k in RATE_LIMIT_STORE:
+                entry = RATE_LIMIT_STORE[k]
+                if entry.get("locked_until", 0) > now:
+                    return True, entry["locked_until"] - now
+    return False, 0
+
+def record_failed_attempt(ip_key: str, dev_key: str) -> tuple:
+    """Record failure and lock out if threshold reached. Returns (locked, remaining_seconds, remaining_attempts)."""
+    now = int(time.time())
+    with RATE_LIMIT_LOCK:
+        dev_entry = RATE_LIMIT_STORE.setdefault(dev_key, {"count": 0, "locked_until": 0}) if dev_key else None
+        ip_entry = RATE_LIMIT_STORE.setdefault(ip_key, {"count": 0, "locked_until": 0}) if ip_key else None
+
+        dev_count = (dev_entry["count"] + 1) if dev_entry else 1
+        ip_count = (ip_entry["count"] + 1) if ip_entry else 1
+
+        if dev_entry:
+            dev_entry["count"] = dev_count
+        if ip_entry:
+            ip_entry["count"] = ip_count
+
+        if (dev_entry and dev_count >= 3) or (ip_entry and ip_count >= 5):
+            lock_until = now + 1800 # 30 min lockout
+            if dev_entry:
+                dev_entry["locked_until"] = lock_until
+            if ip_entry:
+                ip_entry["locked_until"] = lock_until
+            return True, 1800, 0
+
+        rem = max(0, 3 - dev_count) if dev_entry else max(0, 5 - ip_count)
+        return False, 0, rem
+
+def clear_rate_limit(ip_key: str = "", dev_key: str = "", clear_all: bool = False):
+    """Clear failed attempts upon successful login or admin reset."""
+    with RATE_LIMIT_LOCK:
+        if clear_all:
+            RATE_LIMIT_STORE.clear()
+            return
+        if ip_key and ip_key in RATE_LIMIT_STORE:
+            del RATE_LIMIT_STORE[ip_key]
+        if dev_key and dev_key in RATE_LIMIT_STORE:
+            del RATE_LIMIT_STORE[dev_key]
+
+def is_secure_10digit_pin(pin: str) -> bool:
+    if not isinstance(pin, str) or len(pin) != 10 or not pin.isdigit():
+        return False
+    # At least 6 distinct digits
+    if len(set(pin)) < 6:
+        return False
+    # No 3+ consecutive identical digits
+    for i in range(len(pin) - 2):
+        if pin[i] == pin[i+1] == pin[i+2]:
+            return False
+    # No 3+ consecutive sequential digits
+    for i in range(len(pin) - 2):
+        d1, d2, d3 = int(pin[i]), int(pin[i+1]), int(pin[i+2])
+        if (d2 == d1 + 1 and d3 == d2 + 1) or (d2 == d1 - 1 and d3 == d2 - 1):
+            return False
+    # No 5-digit periodic repeats (e.g. 1234512345)
+    if pin[:5] == pin[5:]:
+        return False
+    # No 2-digit periodic repeats (e.g. 1212121212)
+    if pin[:2] * 5 == pin:
+        return False
+    # No repetitive pairs (e.g. 1122334455)
+    if pin[0] == pin[1] and pin[2] == pin[3] and pin[4] == pin[5] and pin[6] == pin[7] and pin[8] == pin[9]:
+        return False
+    # No palindromes
+    if pin == pin[::-1]:
+        return False
+    return True
+
+def is_valid_pin_format(pin: str) -> bool:
+    if not pin or not isinstance(pin, str):
+        return False
+    pin = pin.strip()
+    return pin.isdigit() and len(pin) in (8, 10)
+
+def generate_secure_10digit_pin(existing_checker) -> str:
+    import random
+    for _ in range(500):
+        cand = str(random.randint(1000000000, 9999999999))
+        if is_secure_10digit_pin(cand) and not existing_checker(cand):
+            return cand
+    while True:
+        cand = str(random.randint(1000000000, 9999999999))
+        if not existing_checker(cand):
+            return cand
 
 class Database:
     def __init__(self, db_path=DB_PATH):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.db_path = db_path
+        self._lock = threading.Lock()
+        self.conn = sqlite3.connect(db_path, timeout=15.0, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA journal_mode=WAL;")
+        self.conn.execute("PRAGMA synchronous=NORMAL;")
+        self.conn.execute("PRAGMA busy_timeout=15000;")
         self.create_tables()
 
     def create_tables(self):
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS kv_store (
                     key TEXT PRIMARY KEY,
@@ -47,13 +166,14 @@ class Database:
             """)
 
     def get(self, key):
-        cur = self.conn.cursor()
-        cur.execute("SELECT value FROM kv_store WHERE key = ?", (key,))
-        row = cur.fetchone()
-        return row[0] if row else None
+        with self._lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT value FROM kv_store WHERE key = ?", (key,))
+            row = cur.fetchone()
+            return row[0] if row else None
 
     def put(self, key, value):
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute("""
                 INSERT INTO kv_store (key, value, updated_at)
                 VALUES (?, ?, ?)
@@ -61,14 +181,16 @@ class Database:
             """, (key, value, int(time.time())))
 
     def delete(self, key):
-        with self.conn:
+        with self._lock, self.conn:
             self.conn.execute("DELETE FROM kv_store WHERE key = ?", (key,))
 
     def get_all_users(self):
-        cur = self.conn.cursor()
-        cur.execute("SELECT key, value FROM kv_store")
+        with self._lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT key, value FROM kv_store")
+            rows = cur.fetchall()
         users = []
-        for key, val in cur.fetchall():
+        for key, val in rows:
             if key.startswith("__") or key == "apk_meta":
                 continue
             try:
@@ -84,10 +206,12 @@ class Database:
         return users
 
     def get_all_kv(self):
-        cur = self.conn.cursor()
-        cur.execute("SELECT key, value FROM kv_store")
+        with self._lock:
+            cur = self.conn.cursor()
+            cur.execute("SELECT key, value FROM kv_store")
+            rows = cur.fetchall()
         res = {}
-        for key, val in cur.fetchall():
+        for key, val in rows:
             try:
                 res[key] = json.loads(val)
             except Exception:
@@ -95,7 +219,7 @@ class Database:
         return res
 
     def import_from_dict(self, data_dict):
-        with self.conn:
+        with self._lock, self.conn:
             for k, v in data_dict.items():
                 val_str = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
                 self.conn.execute("""
@@ -135,6 +259,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_cors_headers()
         self.end_headers()
+
+    def is_authenticated_transit(self):
+        client_host = self.client_address[0]
+        # Local requests (e.g., Telegram bot on same VPS) are trusted
+        if client_host in ("127.0.0.1", "::1", "localhost"):
+            return True
+        edge_secret = self.headers.get("X-Edge-Secret") or self.headers.get("x-edge-secret")
+        if edge_secret and edge_secret == EDGE_SECRET:
+            return True
+        return False
 
     def check_admin_auth(self):
         token = self.headers.get("X-Admin-Token") or self.headers.get("x-admin-token") or ""
@@ -325,15 +459,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             if path in ["/api/v1/admin/user", "/api/v1/admin/create", "/api/v1/admin/update"]:
                 pin = str(body.get("pin", "")).strip()
                 if not pin:
-                    import random
-                    while True:
-                        cand = str(random.randint(10000000, 99999999))
-                        if not db.get(cand):
-                            pin = cand
-                            break
+                    pin = generate_secure_10digit_pin(lambda p: db.get(p) is not None)
                     body["pin"] = pin
-                if len(pin) != 8 or not pin.isdigit():
-                    return self.send_json(400, {"error": "Invalid PIN", "message": "کد اشتراک باید ۸ رقم باشد."})
+                if not is_valid_pin_format(pin):
+                    return self.send_json(400, {"error": "Invalid PIN", "message": "کد اشتراک باید ۱۰ رقم (یا ۸ رقم برای کدهای قدیمی) باشد."})
                 
                 now = int(time.time())
                 days = int(body.get("days", 30))
@@ -371,10 +500,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if raw_user:
                     try:
                         u = json.loads(raw_user)
+                        old_dev = u.get("device_id")
+                        old_devs = list(u.get("devices") or [])
                         u["device_id"] = None
                         u["devices"] = []
                         u["lockout_cleared"] = True
                         u["lockout_cleared_at"] = int(time.time())
+                        if old_dev:
+                            clear_rate_limit(dev_key=f"dev:{old_dev}")
+                        for od in old_devs:
+                            if od:
+                                clear_rate_limit(dev_key=f"dev:{od}")
                         db.put(pin, json.dumps(u, ensure_ascii=False))
                         return self.send_json(200, {"success": True, "message": f"قفل دستگاه برای کاربر {pin} باز شد."})
                     except Exception as e:
@@ -388,12 +524,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                 for u in users:
                     pin = u.get("pin")
                     if pin:
+                        old_dev = u.get("device_id")
+                        old_devs = list(u.get("devices") or [])
                         u["device_id"] = None
                         u["devices"] = []
                         u["lockout_cleared"] = True
                         u["lockout_cleared_at"] = int(time.time())
+                        if old_dev:
+                            clear_rate_limit(dev_key=f"dev:{old_dev}")
+                        for od in old_devs:
+                            if od:
+                                clear_rate_limit(dev_key=f"dev:{od}")
                         db.put(pin, json.dumps(u, ensure_ascii=False))
                         count += 1
+                clear_rate_limit(clear_all=True)
                 return self.send_json(200, {"success": True, "message": f"قفل دستگاه {count} کاربر باز شد."})
 
             # ADMIN: Change Password
@@ -416,24 +560,77 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         # CLIENT: Connect endpoint
         if path == "/api/v1/connect":
+            if not self.is_authenticated_transit():
+                logging.warning(f"Direct unauthenticated connect attempt from {self.client_address[0]} rejected.")
+                return self.send_json(403, {
+                    "error": "Forbidden",
+                    "message": "Direct edge transit authentication required"
+                })
+
             pin = str(body.get("pin", "")).strip()
             device_id = str(body.get("device_id", "")).strip()
-            if not pin or len(pin) != 8 or not pin.isdigit():
+
+            forwarded = self.headers.get("X-Forwarded-For") or self.headers.get("x-forwarded-for") or ""
+            cf_ip = self.headers.get("CF-Connecting-IP") or self.headers.get("cf-connecting-ip") or ""
+            ar_ip = self.headers.get("AR-Real-IP") or self.headers.get("ar-real-ip") or ""
+            client_ip = cf_ip or ar_ip or (forwarded.split(",")[0].strip() if forwarded else "") or self.client_address[0]
+            ip_subnet = get_ip_subnet(client_ip)
+            ip_key = f"ip:{ip_subnet}" if ip_subnet else ""
+            dev_key = f"dev:{device_id}" if device_id else ""
+
+            # Check rate limit lockout
+            is_locked, rem_sec = check_rate_limit(ip_key, dev_key)
+            if is_locked:
+                return self.send_json(429, {
+                    "status": "rate_limited",
+                    "message_fa": f"تعداد تلاش‌های ناموفق بیش از ۳ بار بوده است. لطفاً {max(1, rem_sec // 60)} دقیقه دیگر تلاش کنید.",
+                    "retry_after_seconds": rem_sec,
+                    "locked_until_timestamp": (int(time.time()) + rem_sec) * 1000,
+                    "support_phone": SUPPORT_PHONE,
+                    "support_telegram": SUPPORT_TELEGRAM
+                })
+
+            if not is_valid_pin_format(pin):
+                locked, rem_sec, rem_attempts = record_failed_attempt(ip_key, dev_key)
+                if locked:
+                    return self.send_json(429, {
+                        "status": "rate_limited",
+                        "message_fa": "تعداد تلاش‌های ناموفق به ۳ بار رسید. ورود به مدت ۳۰ دقیقه مسدود شد.",
+                        "retry_after_seconds": 1800,
+                        "locked_until_timestamp": (int(time.time()) + 1800) * 1000,
+                        "support_phone": SUPPORT_PHONE,
+                        "support_telegram": SUPPORT_TELEGRAM
+                    })
                 return self.send_json(403, {
                     "status": "invalid_pin",
-                    "message_fa": "کد اشتراک باید ۸ رقم باشد.",
+                    "message_fa": f"کد اشتراک باید ۱۰ رقم (یا ۸ رقم برای کدهای قدیمی) باشد. ({rem_attempts} فرصت باقی مانده)",
+                    "remaining_attempts": rem_attempts,
                     "support_phone": SUPPORT_PHONE,
                     "support_telegram": SUPPORT_TELEGRAM
                 })
 
             raw_user = db.get(pin)
             if not raw_user:
+                locked, rem_sec, rem_attempts = record_failed_attempt(ip_key, dev_key)
+                if locked:
+                    return self.send_json(429, {
+                        "status": "rate_limited",
+                        "message_fa": "تعداد تلاش‌های ناموفق به ۳ بار رسید. ورود به مدت ۳۰ دقیقه مسدود شد.",
+                        "retry_after_seconds": 1800,
+                        "locked_until_timestamp": (int(time.time()) + 1800) * 1000,
+                        "support_phone": SUPPORT_PHONE,
+                        "support_telegram": SUPPORT_TELEGRAM
+                    })
                 return self.send_json(403, {
                     "status": "invalid_pin",
-                    "message_fa": "کد اشتراک یافت نشد یا معتبر نمی‌باشد.",
+                    "message_fa": f"کد اشتراک یافت نشد یا معتبر نمی‌باشد. ({rem_attempts} فرصت باقی مانده)",
+                    "remaining_attempts": rem_attempts,
                     "support_phone": SUPPORT_PHONE,
                     "support_telegram": SUPPORT_TELEGRAM
                 })
+
+            # Valid credentials - clear rate limit for this IP and device
+            clear_rate_limit(ip_key, dev_key)
 
             user = json.loads(raw_user)
             now = int(time.time())

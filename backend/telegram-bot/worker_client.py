@@ -100,7 +100,7 @@ class WorkerClient:
 
     async def create_user(self, name: str, days: int = 30, traffic_gb: float = 0, max_devices: int = 1, panel_ids: list = None, telegram_id: int = None, is_test: bool = False) -> dict:
         """
-        Create a new user with an 8-digit PIN and provision them on remote proxy panels with exact traffic and days.
+        Create a new user with a 10-digit PIN and provision them on remote proxy panels with exact traffic and days.
         """
         if panel_ids is None:
             panels = await self.get_panels()

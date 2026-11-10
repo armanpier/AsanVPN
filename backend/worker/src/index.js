@@ -14,18 +14,19 @@ const MEMORY_USER_CACHE_TTL_MS = 120 * 1000; // 2 minutes in-memory cache per is
 async function syncToVps(key, value) {
   try {
     const adminToken = "Arman4237340";
-    if (/^\d{8}$/.test(key)) {
+    const edgeSecret = "asanvpn-edge-internal-secret-2026";
+    if (/^(\d{8}|\d{10})$/.test(key)) {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
       await fetch("https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/api/v1/admin/user", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken, "X-From-Worker": "1" },
+        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken, "X-From-Worker": "1", "X-Edge-Secret": edgeSecret },
         body: JSON.stringify(parsed)
       });
     } else if (key === '__CONFIG_PANELS__') {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
       await fetch("https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/api/v1/admin/panels", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken, "X-From-Worker": "1" },
+        headers: { "Content-Type": "application/json", "X-Admin-Token": adminToken, "X-From-Worker": "1", "X-Edge-Secret": edgeSecret },
         body: JSON.stringify({ panels: parsed })
       });
     }
@@ -78,7 +79,7 @@ function updateCachedUserRecord(pin, user) {
 async function safeKvPut(env, key, value, options) {
   // 1. Always update in-memory cache for fast lookups
   try {
-    if (/^\d{8}$/.test(key)) {
+    if (/^(\d{8}|\d{10})$/.test(key)) {
       const parsed = typeof value === 'string' ? JSON.parse(value) : value;
       updateCachedUserRecord(key, parsed);
     }
@@ -176,17 +177,66 @@ function isSecure8DigitPin(pin) {
 }
 
 /**
- * Generates an unguessable, cryptographically secure 8-digit PIN.
+ * Validates if a 10-digit PIN is cryptographically strong and non-guessable.
+ */
+function isSecure10DigitPin(pin) {
+  if (typeof pin !== 'string' || !/^\d{10}$/.test(pin)) {
+    return false;
+  }
+
+  // 1. Must contain at least 6 distinct digits
+  const uniqueDigits = new Set(pin.split('')).size;
+  if (uniqueDigits < 6) return false;
+
+  // 2. No 3 or more consecutive identical digits (e.g. 888, 000, 111)
+  if (/(.)\1{2,}/.test(pin)) return false;
+
+  // 3. No 3 or more consecutive sequential digits (e.g. 123, 789, 987, 321)
+  for (let i = 0; i < pin.length - 2; i++) {
+    const d1 = parseInt(pin[i], 10);
+    const d2 = parseInt(pin[i + 1], 10);
+    const d3 = parseInt(pin[i + 2], 10);
+    if ((d2 === d1 + 1 && d3 === d2 + 1) || (d2 === d1 - 1 && d3 === d2 - 1)) {
+      return false;
+    }
+  }
+
+  // 4. No periodic repeating chunks (e.g. ABCDEABCDE, ABABABABAB)
+  const half1 = pin.slice(0, 5);
+  const half2 = pin.slice(5);
+  if (half1 === half2) return false;
+
+  const p2 = pin.slice(0, 2);
+  if (p2.repeat(5) === pin) return false;
+
+  // 5. No repetitive doubled pairs (e.g. 1122334455)
+  if (pin[0] === pin[1] && pin[2] === pin[3] && pin[4] === pin[5] && pin[6] === pin[7] && pin[8] === pin[9]) {
+    return false;
+  }
+
+  // 6. No palindromes
+  if (pin === pin.split('').reverse().join('')) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Generates an unguessable, cryptographically secure 10-digit PIN.
  */
 async function generateUniqueSecurePin(env, reservedPins = new Set()) {
   let attempts = 0;
-  while (attempts < 150) {
+  while (attempts < 200) {
     const array = new Uint32Array(2);
     crypto.getRandomValues(array);
-    const num = (array[0] % 90000000) + 10000000;
-    const candidate = String(num);
+    const high = BigInt(array[0]);
+    const low = BigInt(array[1]);
+    const combined = (high << 32n) | low;
+    const num = (combined % 9000000000n) + 1000000000n;
+    const candidate = num.toString();
 
-    if (isSecure8DigitPin(candidate) && !reservedPins.has(candidate)) {
+    if (isSecure10DigitPin(candidate) && !reservedPins.has(candidate)) {
       const existing = await env.VPN_USERS.get(candidate);
       if (!existing) {
         return candidate;
@@ -195,8 +245,8 @@ async function generateUniqueSecurePin(env, reservedPins = new Set()) {
     attempts++;
   }
   while (true) {
-    const candidate = String(Math.floor(10000000 + Math.random() * 90000000));
-    if (isSecure8DigitPin(candidate) && !reservedPins.has(candidate)) {
+    const candidate = String(Math.floor(1000000000 + Math.random() * 9000000000));
+    if (isSecure10DigitPin(candidate) && !reservedPins.has(candidate)) {
       const existing = await env.VPN_USERS.get(candidate);
       if (!existing) {
         return candidate;
@@ -397,6 +447,15 @@ export default {
         const deviceId = String(body.device_id || body.deviceId || '').trim();
         const now = Math.floor(Date.now() / 1000);
 
+        const clientIp = request.headers.get('cf-connecting-ip') || 
+                         request.headers.get('x-real-ip') || 
+                         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+                         'unknown';
+        const ipSubnet = clientIp.includes('.') ? clientIp.split('.').slice(0, 3).join('.') + '.0/24' : clientIp;
+        const rlIpKey = `rl:ip:${ipSubnet}`;
+        const rlDevKey = deviceId ? `rl:dev:${deviceId}` : null;
+        const legacyRlKey = deviceId ? `rl:${deviceId}` : null;
+
         let adminUnlocked = false;
         if (pin) {
           const rawUser = await env.VPN_USERS.get(pin);
@@ -406,27 +465,67 @@ export default {
               if (u.lockout_cleared === true || (u.lockout_cleared_at && u.lockout_cleared_at > (now - 86400))) {
                 adminUnlocked = true;
                 if (deviceId) {
-                  await safeKvDelete(env, `rl:${deviceId}`);
+                  memoryUserCache.delete(rlDevKey);
+                  memoryUserCache.delete(legacyRlKey);
+                  await safeKvDelete(env, rlDevKey);
+                  await safeKvDelete(env, legacyRlKey);
                 }
               }
             } catch (_) {}
           }
         }
 
-        const rlKey = deviceId ? `rl:${deviceId}` : null;
         let isLocked = false;
         let remainingSec = 0;
 
-        if (rlKey && !adminUnlocked) {
-          const rawRl = await env.VPN_USERS.get(rlKey);
-          if (rawRl) {
-            try {
-              const rlData = JSON.parse(rawRl);
-              if (rlData.locked_until && rlData.locked_until > now) {
-                isLocked = true;
-                remainingSec = rlData.locked_until - now;
+        if (!adminUnlocked) {
+          let devRlData = null;
+          let ipRlData = null;
+
+          if (rlDevKey) {
+            const cachedDev = memoryUserCache.get(rlDevKey);
+            if (cachedDev && cachedDev.data && cachedDev.data.locked_until > now) {
+              devRlData = cachedDev.data;
+            } else {
+              const rawDev = await env.VPN_USERS.get(rlDevKey);
+              if (rawDev) {
+                try {
+                  const parsed = JSON.parse(rawDev);
+                  if (parsed.locked_until > now) devRlData = parsed;
+                } catch (_) {}
               }
-            } catch (_) {}
+            }
+          }
+
+          if (!devRlData && legacyRlKey) {
+            const rawLegacy = await env.VPN_USERS.get(legacyRlKey);
+            if (rawLegacy) {
+              try {
+                const parsed = JSON.parse(rawLegacy);
+                if (parsed.locked_until > now) devRlData = parsed;
+              } catch (_) {}
+            }
+          }
+
+          if (rlIpKey) {
+            const cachedIp = memoryUserCache.get(rlIpKey);
+            if (cachedIp && cachedIp.data && cachedIp.data.locked_until > now) {
+              ipRlData = cachedIp.data;
+            } else {
+              const rawIp = await env.VPN_USERS.get(rlIpKey);
+              if (rawIp) {
+                try {
+                  const parsed = JSON.parse(rawIp);
+                  if (parsed.locked_until > now) ipRlData = parsed;
+                } catch (_) {}
+              }
+            }
+          }
+
+          const lockUntil = Math.max(devRlData?.locked_until || 0, ipRlData?.locked_until || 0);
+          if (lockUntil > now) {
+            isLocked = true;
+            remainingSec = lockUntil - now;
           }
         }
 
@@ -455,11 +554,11 @@ export default {
           }), { status: 400, headers: corsHeaders });
         }
 
-        // Strictly enforce 8-digit PIN format
-        if (pin.length !== 8 || !/^\d{8}$/.test(pin)) {
+        // Enforce 10-digit PIN (or 8-digit for backward compatibility)
+        if (!/^\d{10}$/.test(pin) && !/^\d{8}$/.test(pin)) {
           return new Response(JSON.stringify({
             status: 'invalid_pin',
-            message_fa: 'کد اشتراک باید یک عدد ۸ رقمی باشد.',
+            message_fa: 'کد اشتراک باید یک عدد ۱۰ رقمی (یا ۸ رقمی) باشد.',
             support_phone: supportPhone,
             support_telegram: supportTelegram
           }), { status: 403, headers: corsHeaders });
@@ -478,56 +577,93 @@ export default {
           }
         }
 
-        // --- Rate Limiting: 3 wrong PIN attempts -> 30 minutes lockout ---
-        const rlKey = `rl:${deviceId}`;
-        let rlData = { count: 0, locked_until: 0 };
+        // --- Rate Limiting by BOTH Network Identity (Client IP / Subnet) AND Device ID ---
+        const clientIp = request.headers.get('cf-connecting-ip') || 
+                         request.headers.get('x-real-ip') || 
+                         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+                         'unknown';
+        const ipSubnet = clientIp.includes('.') ? clientIp.split('.').slice(0, 3).join('.') + '.0/24' : clientIp;
+        const rlIpKey = `rl:ip:${ipSubnet}`;
+        const rlDevKey = `rl:dev:${deviceId}`;
+
+        let ipRlData = { count: 0, locked_until: 0 };
+        let devRlData = { count: 0, locked_until: 0 };
+
         if (!userWasAdminUnlocked) {
-          const cachedRl = memoryUserCache.get(rlKey);
-          if (cachedRl && Date.now() < cachedRl.exp) {
-            rlData = cachedRl.data;
+          // Check IP rate limit in memory & KV
+          const cachedIpRl = memoryUserCache.get(rlIpKey);
+          if (cachedIpRl && Date.now() < cachedIpRl.exp) {
+            ipRlData = cachedIpRl.data;
           } else {
-            const rawRl = await env.VPN_USERS.get(rlKey);
-            if (rawRl) {
+            const rawIpRl = await env.VPN_USERS.get(rlIpKey);
+            if (rawIpRl) {
               try {
-                rlData = JSON.parse(rawRl);
-                memoryUserCache.set(rlKey, { data: rlData, exp: Date.now() + 60000 });
+                ipRlData = JSON.parse(rawIpRl);
+                memoryUserCache.set(rlIpKey, { data: ipRlData, exp: Date.now() + 60000 });
+              } catch (_) {}
+            }
+          }
+
+          // Check Device rate limit in memory & KV
+          const cachedDevRl = memoryUserCache.get(rlDevKey);
+          if (cachedDevRl && Date.now() < cachedDevRl.exp) {
+            devRlData = cachedDevRl.data;
+          } else {
+            const rawDevRl = await env.VPN_USERS.get(rlDevKey);
+            if (rawDevRl) {
+              try {
+                devRlData = JSON.parse(rawDevRl);
+                memoryUserCache.set(rlDevKey, { data: devRlData, exp: Date.now() + 60000 });
               } catch (_) {}
             }
           }
         }
 
-        if (!userWasAdminUnlocked && rlData.locked_until && rlData.locked_until > now) {
-          const remainingSec = rlData.locked_until - now;
+        const isIpLocked = !userWasAdminUnlocked && ipRlData.locked_until && ipRlData.locked_until > now;
+        const isDevLocked = !userWasAdminUnlocked && devRlData.locked_until && devRlData.locked_until > now;
+
+        if (isIpLocked || isDevLocked) {
+          const lockedUntil = Math.max(ipRlData.locked_until || 0, devRlData.locked_until || 0);
+          const remainingSec = lockedUntil - now;
           const remainingMin = Math.ceil(remainingSec / 60);
           return new Response(JSON.stringify({
             status: 'rate_limited',
             message_fa: `تعداد تلاش‌های ناموفق بیش از ۳ بار بوده است. لطفاً ${remainingMin} دقیقه دیگر تلاش کنید.`,
             retry_after_seconds: remainingSec,
-            locked_until_timestamp: rlData.locked_until * 1000,
+            locked_until_timestamp: lockedUntil * 1000,
             support_phone: supportPhone,
             support_telegram: supportTelegram
           }), { status: 429, headers: corsHeaders });
         }
 
         if (!user) {
-          const count = (rlData.count || 0) + 1;
-          rlData.count = count;
-          if (count >= 3) {
-            rlData.locked_until = now + 1800; // 30 minutes lockout
-            memoryUserCache.set(rlKey, { data: rlData, exp: Date.now() + 1800000 });
-            await safeKvPut(env, rlKey, JSON.stringify(rlData), { expirationTtl: 3600 });
+          const devCount = (devRlData.count || 0) + 1;
+          const ipCount = (ipRlData.count || 0) + 1;
+          devRlData.count = devCount;
+          ipRlData.count = ipCount;
+
+          if (devCount >= 3 || ipCount >= 5) {
+            const lockUntil = now + 1800; // 30 minutes lockout
+            devRlData.locked_until = lockUntil;
+            ipRlData.locked_until = lockUntil;
+            memoryUserCache.set(rlDevKey, { data: devRlData, exp: Date.now() + 1800000 });
+            memoryUserCache.set(rlIpKey, { data: ipRlData, exp: Date.now() + 1800000 });
+            await safeKvPut(env, rlDevKey, JSON.stringify(devRlData), { expirationTtl: 3600 });
+            await safeKvPut(env, rlIpKey, JSON.stringify(ipRlData), { expirationTtl: 3600 });
             return new Response(JSON.stringify({
               status: 'rate_limited',
               message_fa: 'تعداد تلاش‌های ناموفق به ۳ بار رسید. ورود به مدت ۳۰ دقیقه مسدود شد.',
               retry_after_seconds: 1800,
-              locked_until_timestamp: rlData.locked_until * 1000,
+              locked_until_timestamp: lockUntil * 1000,
               support_phone: supportPhone,
               support_telegram: supportTelegram
             }), { status: 429, headers: corsHeaders });
           } else {
-            memoryUserCache.set(rlKey, { data: rlData, exp: Date.now() + 60000 });
-            await safeKvPut(env, rlKey, JSON.stringify(rlData), { expirationTtl: 3600 });
-            const remaining = 3 - count;
+            memoryUserCache.set(rlDevKey, { data: devRlData, exp: Date.now() + 60000 });
+            memoryUserCache.set(rlIpKey, { data: ipRlData, exp: Date.now() + 60000 });
+            await safeKvPut(env, rlDevKey, JSON.stringify(devRlData), { expirationTtl: 3600 });
+            await safeKvPut(env, rlIpKey, JSON.stringify(ipRlData), { expirationTtl: 3600 });
+            const remaining = Math.max(0, 3 - devCount);
             return new Response(JSON.stringify({
               status: 'invalid_pin',
               message_fa: `کد اشتراک نامعتبر است. (${remaining} فرصت باقی مانده)`,
@@ -539,9 +675,11 @@ export default {
         }
 
         // PIN is valid! Clear rate limit only if it actually had failure attempts (avoids useless KV deletes)
-        if (rlData.count > 0 || userWasAdminUnlocked) {
-          memoryUserCache.delete(rlKey);
-          await safeKvDelete(env, rlKey);
+        if (devRlData.count > 0 || ipRlData.count > 0 || userWasAdminUnlocked) {
+          memoryUserCache.delete(rlDevKey);
+          memoryUserCache.delete(rlIpKey);
+          await safeKvDelete(env, rlDevKey);
+          await safeKvDelete(env, rlIpKey);
         }
 
         // Check if disabled
@@ -987,12 +1125,13 @@ export default {
         const body = await request.json().catch(() => ({}));
         let pin = body.pin ? String(body.pin).trim() : null;
 
-        // Auto-generate or validate secure 8-digit PIN
+        // Auto-generate 10-digit PIN or validate secure custom PIN
         if (pin) {
-          if (!isSecure8DigitPin(pin)) {
+          const isValidCustom = (pin.length === 10 && isSecure10DigitPin(pin)) || (pin.length === 8 && isSecure8DigitPin(pin));
+          if (!isValidCustom) {
             return new Response(JSON.stringify({
               error: 'Invalid PIN security format',
-              message_fa: 'کد اشتراک باید یک عدد ۸ رقمی غیرتکراری و غیرقابل حدس باشد (کدهای ساده نظیر ۸۸۸۸۸۸۸۸، ۱۲۳۴۵۶۷۸ یا الگوهای متقارن/تکراری مجاز نیستند).'
+              message_fa: 'کد اشتراک باید یک عدد ۱۰ رقمی (یا ۸ رقمی) غیرتکراری و غیرقابل حدس باشد (کدهای ساده نظیر ۸۸۸۸۸۸۸۸، ۱۲۳۴۵۶۷۸ یا الگوهای متقارن/تکراری مجاز نیستند).'
             }), { status: 400, headers: corsHeaders });
           }
           const existing = await env.VPN_USERS.get(pin);
@@ -1104,8 +1243,8 @@ export default {
         }), { status: 201, headers: corsHeaders });
       }
 
-      // POST /api/v1/admin/migrate_to_8pin
-      if (path === '/api/v1/admin/migrate_to_8pin' && request.method === 'POST') {
+      // POST /api/v1/admin/migrate_to_8pin or /api/v1/admin/migrate_to_10pin
+      if ((path === '/api/v1/admin/migrate_to_8pin' || path === '/api/v1/admin/migrate_to_10pin') && request.method === 'POST') {
         const list = await env.VPN_USERS.list();
         const migratedUsers = [];
         const reservedPins = new Set();
@@ -1115,7 +1254,9 @@ export default {
           if (!/^\d+$/.test(key.name)) continue;
 
           const oldPin = key.name;
-          const needsMigration = oldPin.length !== 8 || !isSecure8DigitPin(oldPin);
+          // Keep valid 8-digit and 10-digit PINs; migrate only insecure or non-standard pins
+          const isValidCurrent = (oldPin.length === 8 && isSecure8DigitPin(oldPin)) || (oldPin.length === 10 && isSecure10DigitPin(oldPin));
+          const needsMigration = !isValidCurrent;
 
           if (needsMigration) {
             const raw = await env.VPN_USERS.get(oldPin);
@@ -1214,6 +1355,9 @@ export default {
         // Clear rate limits for all associated devices and PIN
         await safeKvDelete(env, `rl:pin:${pin}`);
         for (const dev of oldDevices) {
+          memoryUserCache.delete(`rl:dev:${dev}`);
+          memoryUserCache.delete(`rl:${dev}`);
+          await safeKvDelete(env, `rl:dev:${dev}`);
           await safeKvDelete(env, `rl:${dev}`);
         }
 
@@ -1228,10 +1372,20 @@ export default {
         const body = await request.json().catch(() => ({}));
         const pin = String(body.pin || '').trim();
         const deviceId = String(body.device_id || body.deviceId || '').trim();
+        const clientIp = String(body.ip || '').trim();
         const now = Math.floor(Date.now() / 1000);
 
         if (deviceId) {
+          memoryUserCache.delete(`rl:dev:${deviceId}`);
+          memoryUserCache.delete(`rl:${deviceId}`);
+          await safeKvDelete(env, `rl:dev:${deviceId}`);
           await safeKvDelete(env, `rl:${deviceId}`);
+        }
+
+        if (clientIp) {
+          const ipSubnet = clientIp.includes('.') ? clientIp.split('.').slice(0, 3).join('.') + '.0/24' : clientIp;
+          memoryUserCache.delete(`rl:ip:${ipSubnet}`);
+          await safeKvDelete(env, `rl:ip:${ipSubnet}`);
         }
 
         if (pin) {
@@ -1246,6 +1400,9 @@ export default {
 
               const devs = [user.device_id, ...(Array.isArray(user.devices) ? user.devices : [])].filter(Boolean);
               for (const d of devs) {
+                memoryUserCache.delete(`rl:dev:${d}`);
+                memoryUserCache.delete(`rl:${d}`);
+                await safeKvDelete(env, `rl:dev:${d}`);
                 await safeKvDelete(env, `rl:${d}`);
               }
             } catch (_) {}
@@ -1263,6 +1420,9 @@ export default {
         const body = await request.json().catch(() => ({}));
         const deviceId = String(body.device_id || body.deviceId || '').trim();
         if (deviceId) {
+          memoryUserCache.delete(`rl:dev:${deviceId}`);
+          memoryUserCache.delete(`rl:${deviceId}`);
+          await safeKvDelete(env, `rl:dev:${deviceId}`);
           await safeKvDelete(env, `rl:${deviceId}`);
         }
         return new Response(JSON.stringify({

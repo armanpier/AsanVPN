@@ -53,7 +53,7 @@ import com.asanvpn.app.data.VpnRepository
 import com.asanvpn.app.ui.theme.*
 import kotlinx.coroutines.delay
 
-private const val PIN_LENGTH = 8
+private const val PIN_LENGTH = 10
 
 @Composable
 fun PinScreen(
@@ -229,6 +229,12 @@ fun PinScreen(
                     val finalPin = cleaned.take(PIN_LENGTH)
                     enteredPin = finalPin
                     performClickHaptic()
+                    Toast.makeText(context, "کد ۱۰ رقمی جای‌گذاری شد", Toast.LENGTH_SHORT).show()
+                    onPinComplete(finalPin)
+                } else if (cleaned.length == 8) {
+                    val finalPin = cleaned
+                    enteredPin = finalPin
+                    performClickHaptic()
                     Toast.makeText(context, "کد ۸ رقمی جای‌گذاری شد", Toast.LENGTH_SHORT).show()
                     onPinComplete(finalPin)
                 } else if (cleaned.isNotEmpty()) {
@@ -258,11 +264,14 @@ fun PinScreen(
                 .background(animatedBgColor)
         )
 
+        val scrollState = rememberScrollState()
+
         // Main UI Column
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .verticalScroll(scrollState)
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
@@ -272,7 +281,7 @@ fun PinScreen(
                 modifier = Modifier.padding(top = 10.dp)
             ) {
                 Text(
-                    text = "کد ۸ رقمی خود را وارد کنید",
+                    text = "کد ۱۰ رقمی خود را وارد کنید",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
@@ -280,13 +289,13 @@ fun PinScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "کد ۸ رقمی اختصاصی خود را وارد نمایید",
+                    text = "کد اشتراک ۱۰ رقمی (یا ۸ رقمی) اختصاصی خود را وارد نمایید",
                     fontSize = 13.sp,
                     color = TextSecondary,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Invisible BasicTextField for keyboard handling
                 BasicTextField(
@@ -294,10 +303,13 @@ fun PinScreen(
                     onValueChange = { newRaw ->
                         if (!isLockedOut && !isLoading && !isSuccess) {
                             val cleaned = cleanPinDigits(newRaw).take(PIN_LENGTH)
+                            val isPasteJump = cleaned.length - enteredPin.length > 1
                             if (cleaned != enteredPin) {
                                 performClickHaptic()
                                 enteredPin = cleaned
                                 if (cleaned.length == PIN_LENGTH) {
+                                    onPinComplete(cleaned)
+                                } else if (isPasteJump && cleaned.length == 8) {
                                     onPinComplete(cleaned)
                                 }
                             }
@@ -312,32 +324,32 @@ fun PinScreen(
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            if (enteredPin.length == PIN_LENGTH) {
+                            if (enteredPin.length == PIN_LENGTH || enteredPin.length == 8) {
                                 onPinComplete(enteredPin)
                             }
                         }
                     )
                 )
 
-                // 8 Visible Pin Indicator Boxes (3D Neumorphic Inset Wells)
+                // 10 Visible Pin Indicator Boxes (Two rows of 5 neumorphic wells)
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // First 4 Digits
+                        // Row 1: Digits 1 to 5
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            for (i in 0 until 4) {
+                            for (i in 0 until 5) {
                                 val hasDigit = i < enteredPin.length
                                 val isCurrent = i == enteredPin.length && !isLockedOut
                                 val digitChar = if (hasDigit) enteredPin[i].toString() else null
 
                                 Box(
                                     modifier = Modifier
-                                        .size(width = 34.dp, height = 48.dp)
+                                        .size(width = 46.dp, height = 48.dp)
                                         .then(
                                             if (hasDigit) {
                                                 Modifier.neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
@@ -370,7 +382,7 @@ fun PinScreen(
                                         Box(
                                             modifier = Modifier
                                                 .width(2.5.dp)
-                                                .height(20.dp)
+                                                .height(18.dp)
                                                 .background(AccentTeal, RoundedCornerShape(1.dp))
                                         )
                                     } else {
@@ -386,28 +398,19 @@ fun PinScreen(
                             }
                         }
 
-                        // Separator between the two groups of 4 digits
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 8.dp)
-                                .width(10.dp)
-                                .height(3.dp)
-                                .background(AccentTeal.copy(alpha = 0.5f), RoundedCornerShape(2.dp))
-                        )
-
-                        // Second 4 Digits
+                        // Row 2: Digits 6 to 10
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            for (i in 4 until PIN_LENGTH) {
+                            for (i in 5 until PIN_LENGTH) {
                                 val hasDigit = i < enteredPin.length
                                 val isCurrent = i == enteredPin.length && !isLockedOut
                                 val digitChar = if (hasDigit) enteredPin[i].toString() else null
 
                                 Box(
                                     modifier = Modifier
-                                        .size(width = 34.dp, height = 48.dp)
+                                        .size(width = 46.dp, height = 48.dp)
                                         .then(
                                             if (hasDigit) {
                                                 Modifier.neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
@@ -440,7 +443,7 @@ fun PinScreen(
                                         Box(
                                             modifier = Modifier
                                                 .width(2.5.dp)
-                                                .height(20.dp)
+                                                .height(18.dp)
                                                 .background(AccentTeal, RoundedCornerShape(1.dp))
                                         )
                                     } else {
@@ -476,8 +479,13 @@ fun PinScreen(
                                 color = TextSecondary
                             )
                             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                val formattedPin = when {
+                                    enteredPin.length == 8 -> enteredPin.take(4) + " " + enteredPin.drop(4)
+                                    enteredPin.length > 5 -> enteredPin.take(5) + " " + enteredPin.drop(5)
+                                    else -> enteredPin
+                                }
                                 Text(
-                                    text = enteredPin,
+                                    text = formattedPin,
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = AccentTeal,
@@ -626,8 +634,8 @@ fun PinScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(bottom = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val rows = listOf(
                     listOf("1", "2", "3"),
@@ -639,13 +647,13 @@ fun PinScreen(
                 for (row in rows) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         for (item in row) {
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(66.dp),
+                                    .height(58.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 val buttonAlpha = if (isLockedOut) 0.35f else 1f
@@ -667,7 +675,7 @@ fun PinScreen(
                                         }
                                     }
                                     "submit" -> {
-                                        val canSubmit = enteredPin.length == PIN_LENGTH && !isLoading && !isSuccess && !isLockedOut
+                                        val canSubmit = (enteredPin.length == PIN_LENGTH || enteredPin.length == 8) && !isLoading && !isSuccess && !isLockedOut
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()

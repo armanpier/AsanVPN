@@ -260,9 +260,9 @@ export function getAdminDashboardHtml() {
           <i class="fa-solid fa-code-merge"></i>
           <span class="hidden lg:inline">ادغام همنام‌ها</span>
         </button>
-        <button onclick="triggerMigrateTo8Pin()" id="migrate-8pin-btn" title="تبدیل تمام کدهای قدیمی به ۸ رقمی امن" class="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
+        <button onclick="triggerMigrateTo8Pin()" id="migrate-8pin-btn" title="تبدیل تمام کدهای قدیمی به ۱۰ رقمی امن" class="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-amber-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-shield-halved"></i>
-          <span class="hidden lg:inline">تبدیل ۸ رقمی</span>
+          <span class="hidden lg:inline">تبدیل ۱۰ رقمی</span>
         </button>
         <button onclick="openUnlockLockoutModal()" title="رفع مسدودی و قفل ۳۰ دقیقه‌ای کاربر یا دستگاه" class="bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-medium p-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1">
           <i class="fa-solid fa-lock-open"></i>
@@ -573,8 +573,8 @@ export function getAdminDashboardHtml() {
             <input type="number" id="new-user-days" value="30" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none text-slate-100">
           </div>
           <div>
-            <label class="block text-xs text-slate-300 mb-1">کد ۸ رقمی امن (اختیاری)</label>
-            <input type="text" id="new-custom-pin" maxlength="8" placeholder="تولید خودکار در صورت خالی بودن" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none text-center font-mono font-bold tracking-widest text-emerald-400">
+            <label class="block text-xs text-slate-300 mb-1">کد ۱۰ رقمی امن (اختیاری)</label>
+            <input type="text" id="new-custom-pin" maxlength="10" placeholder="تولید خودکار در صورت خالی بودن (۱۰ رقمی)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 focus:border-emerald-500 outline-none text-center font-mono font-bold tracking-widest text-emerald-400">
           </div>
         </div>
 
@@ -1304,8 +1304,8 @@ export function getAdminDashboardHtml() {
 
     async function triggerMigrateTo8Pin() {
       const confirmRes = await Swal.fire({
-        title: 'تبدیل تمام کدهای قدیمی به ۸ رقمی امن؟',
-        text: 'تمامی کدهای ۴ رقمی و کدهای ساده به کدهای ۸ رقمی غیرقابل حدس و تصادفی تبدیل خواهند شد و قفل سخت‌افزاری آن‌ها برای اتصال مجدد ریست می‌شود.',
+        title: 'تبدیل تمام کدهای قدیمی به ۱۰ رقمی امن؟',
+        text: 'تمامی کدهای قدیمی یا ناامن به کدهای ۱۰ رقمی غیرقابل حدس و تصادفی تبدیل خواهند شد و قفل سخت‌افزاری آن‌ها برای اتصال مجدد ریست می‌شود.',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'بله، تبدیل کن',

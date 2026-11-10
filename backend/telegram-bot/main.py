@@ -93,7 +93,7 @@ DEFAULT_WELCOME_TEXT = (
     "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
     "🤖 <b>قابلیت‌های هوشمند ربات آسان وی‌پی‌ان:</b>\n\n"
     "💎 <b>خرید آنی و خودکار:</b> انتخاب پلن و پرداخت آنلاین مستقیم با کلیه کارت‌های شتاب.\n"
-    "🔑 <b>تحویل فوری کد ۸ رقمی:</b> صدور خودکار کد اشتراک بلافاصله پس از پرداخت بدون معطلی.\n"
+    "🔑 <b>تحویل فوری کد ۱۰ رقمی:</b> صدور خودکار کد اشتراک بلافاصله پس از پرداخت بدون معطلی.\n"
     "🔄 <b>شارژ تجمعی بدون سوخت حجم:</b> با خرید قبل از پایان اشتراک، حجم و روزها به اکانت فعلی شما افزوده می‌شود.\n"
     "📊 <b>استعلام لحظه‌ای:</b> مشاهده مانده حجم و روزهای باقیمانده در هر ساعت شبانه‌روز.\n"
     "📱 <b>اتصال با اپلیکیشن AsanVPN:</b> اتصال تک‌کلیکه با پروتکل‌های نوین ضد فیلتر (VLESS, Reality).\n"
@@ -399,7 +399,7 @@ async def plan_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
             "🔄 <b>تمدید و شارژ اشتراک فعلی:</b>\n"
             f"حجم ({plan['traffic_gb']}GB) و روزها ({plan['days']} روز) به همین کد <code>{latest_pin}</code> اضافه می‌شود (حجم فعلی نمی‌سوزد و نیازی به تغییر کد در برنامه نیست).\n\n"
             "➕ <b>دریافت اشتراک کاملاً جدید:</b>\n"
-            "یک کد اختصاصی ۸ رقمی مجزا و مستقل برای شما صادر خواهد شد."
+            "یک کد اختصاصی ۱۰ رقمی مجزا و مستقل برای شما صادر خواهد شد."
         )
 
         ask_keyboard = InlineKeyboardMarkup([
@@ -460,7 +460,7 @@ async def ask_renew_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     USER_STATES[user_id] = "waiting_for_renew_pin"
     text = (
         "🔄 <b>تمدید اشتراک آسان وی‌پی‌ان:</b>\n\n"
-        "لطفاً <b>کد اختصاصی ۸ رقمی</b> اشتراک فعلی خود را ارسال فرمایید:"
+        "لطفاً <b>کد اختصاصی ۱۰ رقمی (یا ۸ رقمی)</b> اشتراک فعلی خود را ارسال فرمایید:"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home")]
@@ -477,7 +477,7 @@ async def renew_manual_input_callback(update: Update, context: ContextTypes.DEFA
     USER_STATES[user_id] = "waiting_for_renew_pin"
     text = (
         "🔄 <b>تمدید اشتراک با کد دستی:</b>\n\n"
-        "لطفاً <b>کد اختصاصی ۸ رقمی</b> اشتراک فعلی خود را ارسال فرمایید:"
+        "لطفاً <b>کد اختصاصی ۱۰ رقمی (یا ۸ رقمی)</b> اشتراک فعلی خود را ارسال فرمایید:"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home")]
@@ -499,7 +499,7 @@ async def handle_renew_pin_input(update_or_query, context: ContextTypes.DEFAULT_
     if not user_record:
         await msg.edit_text(
             f"❌ کد اشتراک <code>{pin}</code> در سیستم یافت نشد.\n\n"
-            "لطفاً از صحت کد ۸ رقمی اطمینان حاصل کرده یا یک اشتراک جدید خریداری فرمایید.",
+            "لطفاً از صحت کد ۱۰ رقمی (یا ۸ رقمی) اطمینان حاصل کرده یا یک اشتراک جدید خریداری فرمایید.",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🟡 خرید اشتراک جدید", callback_data="buy_new_plan")],
@@ -711,7 +711,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
                 f"⏳ <b>مدت اعتبار:</b> {days} روز\n\n"
                 "📱 <b>راهنمای اتصال سریع:</b>\n"
                 "۱. دکمه «اتصال و فعال‌سازی مستقیم در برنامه» زیر را لمس نمایید تا برنامه خودکار باز شود.\n"
-                f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد ۸ رقمی <code>{pin}</code> را وارد فرمایید.\n"
+                f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد اختصاصی <code>{pin}</code> را وارد فرمایید.\n"
                 "۳. دکمه اتصال را لمس کنید تا به بهترین سرور متصل شوید!\n\n"
                 "🔒 <b>امنیت و قفل دستگاه:</b> اشتراک تستی برای ۲ دستگاه همزمان فعال بوده و بر روی دو دستگاه اول متصل‌شده قفل می‌گردد.\n\n"
                 f"🧾 <b>شناسه سفارش تستی:</b> <code>{tracking_code}</code>"
@@ -727,7 +727,7 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
                 f"⏳ <b>مدت اعتبار:</b> {days} روز\n\n"
                 "📱 <b>راهنمای اتصال سریع:</b>\n"
                 "۱. دکمه «اتصال و فعال‌سازی مستقیم در برنامه» زیر را لمس نمایید تا برنامه خودکار باز شود.\n"
-                f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد ۸ رقمی <code>{pin}</code> را وارد فرمایید.\n"
+                f"۲. یا می‌توانید نرم‌افزار <b>آسان وی‌پی‌ان</b> را باز کرده و کد اختصاصی <code>{pin}</code> را وارد فرمایید.\n"
                 "۳. دکمه اتصال را لمس کنید تا به بهترین سرور متصل شوید!\n\n"
                 "🔒 <b>امنیت و قفل دستگاه:</b> این اشتراک برای ۲ دستگاه (۲ گوشی همزمان) فعال بوده و بر روی دو دستگاه اول متصل‌شده قفل می‌گردد.\n\n"
                 f"🧾 <b>کد رهگیری تراکنش هوش‌پی:</b> <code>{tracking_code}</code>\n"
@@ -1141,7 +1141,7 @@ async def process_admin_sub_lookup(update: Update, context: ContextTypes.DEFAULT
         return
 
     # Check username
-    if raw.startswith("@") or (not raw.isdigit() and len(raw) >= 3 and not re.fullmatch(r'\d{8}', raw)):
+    if raw.startswith("@") or (not raw.isdigit() and len(raw) >= 3 and not re.fullmatch(r'\d{8}|\d{10}', raw)):
         uname = raw.lstrip("@")
         u_info = await db.get_user_by_username(uname)
         if u_info:
@@ -1149,13 +1149,13 @@ async def process_admin_sub_lookup(update: Update, context: ContextTypes.DEFAULT
             raw = str(target_tid)
         else:
             await update.message.reply_text(
-                f"❌ کاربری با نام کاربری <code>@{uname}</code> در سیستم یافت نشد.\nلطفاً کد ۸ رقمی PIN یا آیدی عددی تلگرام را وارد کنید:",
+                f"❌ کاربری با نام کاربری <code>@{uname}</code> در سیستم یافت نشد.\nلطفاً کد ۱۰ رقمی (یا ۸ رقمی) PIN یا آیدی عددی تلگرام را وارد کنید:",
                 parse_mode=ParseMode.HTML
             )
             return
 
-    # Check 8-digit PIN
-    if re.fullmatch(r'\d{8}', raw):
+    # Check 10-digit or 8-digit PIN
+    if re.fullmatch(r'\d{8}|\d{10}', raw):
         ADMIN_STATES.pop(user_id, None)
         await show_admin_del_pin_card(update, context, pin=raw)
         return
@@ -2311,7 +2311,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎁 دریافت اشتراک تست رایگان (۱ روزه)", callback_data="claim_free_test", style="success")],
             [InlineKeyboardButton("🛒 خرید اشتراک پرسرعت جدید", callback_data="buy_new_plan", style="danger")],
-            [InlineKeyboardButton("🔍 استعلام با وارد کردن کد دستی ۸ رقمی", callback_data="status_manual_input", style="primary")],
+            [InlineKeyboardButton("🔍 استعلام با وارد کردن کد دستی (۱۰ یا ۸ رقمی)", callback_data="status_manual_input", style="primary")],
             [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")]
         ])
         if query:
@@ -2392,7 +2392,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
     res_text = (
         "📊 <b>مشخصات و وضعیت لحظه‌ای اشتراک شما:</b>\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "🔑 <b>کد اختصاصی ۸ رقمی شما:</b>\n\n"
+        "🔑 <b>کد اختصاصی اشتراک شما:</b>\n\n"
         f"👉  <code>{pin}</code>  👈\n\n"
         "👆 <b>برای کپی کردن، کافیست یک‌بار روی کد بالا ضربه بزنید.</b>\n\n"
         f"🚀 <a href=\"https://asanvpn-worker.hi-deploy.workers.dev/open?pin={pin}\"><b>کلیک کنید تا اپلیکیشن آسان وی‌پی‌ان خودکار باز و فعال شود</b></a>\n\n"
@@ -2403,7 +2403,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
         f"📱 <b>دستگاه‌های متصل:</b> {dev_str}\n"
         "🔒 <b>امنیت سخت‌افزاری:</b> قفل اختصاصی روی ۲ دستگاه همزمان\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n"
-        "💡 <i>کد ۸ رقمی بالا را کپی کرده و در کادر ورودی نرم‌افزار <b>آسان وی‌پی‌ان (AsanVPN)</b> وارد فرمایید.</i>"
+        "💡 <i>کد اختصاصی بالا را کپی کرده و در کادر ورودی نرم‌افزار <b>آسان وی‌پی‌ان (AsanVPN)</b> وارد فرمایید.</i>"
     )
 
     kb = [
@@ -2422,7 +2422,7 @@ async def show_user_status_flow(update: Update, context: ContextTypes.DEFAULT_TY
             row.append(InlineKeyboardButton(f"🔑 اشتراک {op}", callback_data=f"status_view_pin:{op}", style="primary"))
         kb.append(row)
 
-    kb.append([InlineKeyboardButton("🔍 استعلام با کد دستی ۸ رقمی دیگر", callback_data="status_manual_input", style="primary")])
+    kb.append([InlineKeyboardButton("🔍 استعلام با کد دستی دیگر", callback_data="status_manual_input", style="primary")])
     kb.append([InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")])
 
     await msg.edit_text(res_text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
@@ -2434,7 +2434,7 @@ async def status_manual_input_callback(update: Update, context: ContextTypes.DEF
     USER_STATES[user_id] = "waiting_for_status_pin"
     text = (
         "🔍 <b>استعلام دستی وضعیت اشتراک:</b>\n\n"
-        "لطفاً <b>کد اختصاصی ۸ رقمی</b> مورد نظر خود را ارسال فرمایید:"
+        "لطفاً <b>کد اختصاصی ۱۰ رقمی (یا ۸ رقمی)</b> مورد نظر خود را ارسال فرمایید:"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_home", style="primary")]
@@ -2777,9 +2777,9 @@ async def text_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return
 
-    # 9. Handle numeric input (8-digit PIN)
+    # 9. Handle numeric input (10-digit or 8-digit PIN)
     digits_only = re.sub(r'\D', '', raw_text)
-    if len(digits_only) == 8:
+    if len(digits_only) in (8, 10):
         if state == "waiting_for_renew_pin":
             await handle_renew_pin_input(update, context, digits_only)
             return
@@ -2788,11 +2788,11 @@ async def text_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
     if state == "waiting_for_renew_pin":
-        await update.message.reply_text("⚠️ لطفاً یک کد ۸ رقمی معتبر ارسال نمایید.")
+        await update.message.reply_text("⚠️ لطفاً یک کد ۱۰ رقمی (یا ۸ رقمی) معتبر ارسال نمایید.")
         return
 
     if state == "waiting_for_status_pin":
-        await update.message.reply_text("⚠️ لطفاً یک کد ۸ رقمی معتبر ارسال نمایید.")
+        await update.message.reply_text("⚠️ لطفاً یک کد ۱۰ رقمی (یا ۸ رقمی) معتبر ارسال نمایید.")
         return
 
     # Fallback

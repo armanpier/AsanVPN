@@ -82,7 +82,10 @@ class BotDatabase:
         self.admin_ids_cache: set[int] = {93795023} | set(ADMIN_IDS)
 
     async def init_db(self):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
+            await db.execute("PRAGMA journal_mode=WAL;")
+            await db.execute("PRAGMA synchronous=NORMAL;")
+            await db.execute("PRAGMA busy_timeout=15000;")
             # Users table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -210,13 +213,13 @@ class BotDatabase:
 
     # ---------------- SETTINGS ----------------
     async def get_setting(self, key: str, default: str = None) -> str:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
                 row = await cur.fetchone()
                 return row[0] if row else default
 
     async def set_setting(self, key: str, value: str):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("""
                 INSERT INTO settings (key, value) VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
@@ -224,7 +227,7 @@ class BotDatabase:
             await db.commit()
 
     async def get_all_settings(self) -> dict:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT key, value FROM settings") as cur:
                 rows = await cur.fetchall()
@@ -232,7 +235,7 @@ class BotDatabase:
 
     # ---------------- PLANS ----------------
     async def get_plans(self, active_only: bool = True) -> list:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             query = "SELECT * FROM plans"
             if active_only:
@@ -243,14 +246,14 @@ class BotDatabase:
                 return [dict(r) for r in rows]
 
     async def get_plan_by_id(self, plan_id: str) -> dict:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)) as cur:
                 row = await cur.fetchone()
                 return dict(row) if row else None
 
     async def add_or_update_plan(self, plan_id: str, title: str, days: int, traffic_gb: int, max_devices: int, price_toman: int, is_active: int = 1, sort_order: int = 0):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("""
                 INSERT INTO plans (id, title, days, traffic_gb, max_devices, price_toman, is_active, sort_order)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -266,12 +269,12 @@ class BotDatabase:
             await db.commit()
 
     async def delete_plan(self, plan_id: str):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
             await db.commit()
 
     async def toggle_plan(self, plan_id: str) -> int:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             async with db.execute("SELECT is_active FROM plans WHERE id = ?", (plan_id,)) as cur:
                 row = await cur.fetchone()
                 if not row:
@@ -283,7 +286,7 @@ class BotDatabase:
 
     # ---------------- USERS & ORDERS ----------------
     async def register_user(self, telegram_id: int, username: str, first_name: str):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("""
                 INSERT INTO users (telegram_id, username, first_name, created_at)
                 VALUES (?, ?, ?, ?)
@@ -294,13 +297,13 @@ class BotDatabase:
             await db.commit()
 
     async def get_all_user_ids(self) -> list:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             async with db.execute("SELECT telegram_id FROM users") as cur:
                 rows = await cur.fetchall()
                 return [r[0] for r in rows]
 
     async def create_order(self, order_id: str, telegram_id: int, order_type: str, plan_id: str, amount_toman: int, hooshpay_uid: str, payment_url: str, target_pin: str = None):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("""
                 INSERT INTO orders (
                     order_id, telegram_id, order_type, target_pin, plan_id,
@@ -313,7 +316,7 @@ class BotDatabase:
             await db.commit()
 
     async def get_order_by_uid(self, hooshpay_uid: str) -> dict:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM orders WHERE hooshpay_uid = ?", (hooshpay_uid,)) as cursor:
                 row = await cursor.fetchone()
@@ -321,7 +324,7 @@ class BotDatabase:
 
     async def get_pending_orders(self, older_than_seconds: int = 1800) -> list:
         cutoff = int(time.time()) - older_than_seconds
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM orders WHERE status = 'pending' AND created_at >= ?", (cutoff,)
@@ -330,7 +333,7 @@ class BotDatabase:
                 return [dict(r) for r in rows]
 
     async def mark_order_paid(self, hooshpay_uid: str, tracking_code: str, assigned_pin: str = None) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             now = int(time.time())
             cursor = await db.execute("""
                 UPDATE orders
@@ -341,7 +344,7 @@ class BotDatabase:
             return cursor.rowcount > 0
 
     async def get_user_orders(self, telegram_id: int) -> list:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM orders WHERE telegram_id = ? ORDER BY id DESC LIMIT 10", (telegram_id,)
@@ -351,7 +354,7 @@ class BotDatabase:
 
     async def get_user_latest_pin(self, telegram_id: int) -> str:
         """Get the latest paid PIN, pinned PIN, or test PIN assigned to this telegram user"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             # Check paid orders first (ignoring known non-existent PINs)
             async with db.execute(
@@ -385,7 +388,7 @@ class BotDatabase:
     async def get_recent_admin_pins(self, limit: int = 5) -> list:
         """Fetch recently issued pins from orders for admin convenience"""
         pins = []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             async with db.execute(
                 "SELECT DISTINCT assigned_pin FROM orders WHERE assigned_pin IS NOT NULL AND assigned_pin != '' AND assigned_pin != '26508350' ORDER BY id DESC LIMIT ?",
                 (limit,)
@@ -400,7 +403,7 @@ class BotDatabase:
     async def get_user_all_pins(self, telegram_id: int) -> list:
         """Get all distinct valid PINs assigned to this telegram user"""
         pins = []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             # Paid orders
             async with db.execute(
                 "SELECT DISTINCT assigned_pin FROM orders WHERE telegram_id = ? AND status = 'paid' AND assigned_pin IS NOT NULL AND assigned_pin != '' AND assigned_pin != '26508350' ORDER BY id DESC",
@@ -441,7 +444,7 @@ class BotDatabase:
         if not pin or len(str(pin).strip()) != 8:
             return
         clean_pin = str(pin).strip()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("""
                 INSERT INTO user_pinned_accounts (telegram_id, pin, created_at)
                 VALUES (?, ?, ?)
@@ -458,7 +461,7 @@ class BotDatabase:
     async def unlink_invalid_pin(self, pin: str):
         """Purge non-existent PIN from SQLite"""
         clean_pin = str(pin).strip()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("DELETE FROM user_pinned_accounts WHERE pin = ?", (clean_pin,))
             await db.execute("UPDATE orders SET assigned_pin = NULL WHERE assigned_pin = ?", (clean_pin,))
             await db.execute("DELETE FROM test_claims WHERE pin = ?", (clean_pin,))
@@ -468,7 +471,7 @@ class BotDatabase:
         """Find all telegram IDs associated with a PIN in pinned accounts and orders"""
         clean_pin = str(pin).strip()
         linked_users = []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT telegram_id FROM user_pinned_accounts WHERE pin = ?", (clean_pin,)) as cur:
                 rows = await cur.fetchall()
@@ -489,7 +492,7 @@ class BotDatabase:
         """
         clean_pin = str(pin).strip()
         linked_users = []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT telegram_id FROM user_pinned_accounts WHERE pin = ?", (clean_pin,)) as cur:
                 rows = await cur.fetchall()
@@ -514,7 +517,7 @@ class BotDatabase:
         }
 
     async def get_user_by_id(self, telegram_id: int):
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)) as cur:
                 row = await cur.fetchone()
@@ -522,7 +525,7 @@ class BotDatabase:
 
     async def get_user_by_username(self, username: str):
         clean_user = username.strip().lstrip("@").lower()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM users WHERE LOWER(username) = ?", (clean_user,)) as cur:
                 row = await cur.fetchone()
@@ -530,7 +533,7 @@ class BotDatabase:
 
     async def has_paid_order(self, telegram_id: int) -> bool:
         """Check if user has ever completed a paid order"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             async with db.execute(
                 "SELECT id FROM orders WHERE telegram_id = ? AND status = 'paid' LIMIT 1",
                 (telegram_id,)
@@ -540,7 +543,7 @@ class BotDatabase:
     # ---------------- FREE TEST CLAIMS ----------------
     async def has_claimed_test(self, telegram_id: int) -> bool:
         """Check if user has claimed a free test plan"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             async with db.execute(
                 "SELECT pin FROM test_claims WHERE telegram_id = ?",
                 (telegram_id,)
@@ -549,7 +552,7 @@ class BotDatabase:
 
     async def get_test_claim(self, telegram_id: int) -> dict:
         """Get test claim details for user"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM test_claims WHERE telegram_id = ?",
@@ -560,7 +563,7 @@ class BotDatabase:
 
     async def record_test_claim(self, telegram_id: int, pin: str):
         """Record a test claim for user"""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("""
                 INSERT INTO test_claims (telegram_id, pin, claimed_at)
                 VALUES (?, ?, ?)
@@ -570,7 +573,7 @@ class BotDatabase:
 
     # ---------------- STATISTICS ----------------
     async def get_stats(self) -> dict:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             now = int(time.time())
             today_start = now - (now % 86400)
             month_start = now - (30 * 86400)
@@ -621,7 +624,7 @@ class BotDatabase:
         return set(self.admin_ids_cache) | {93795023}
 
     async def get_all_admins(self) -> list:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
                 SELECT * FROM bot_admins
@@ -647,7 +650,7 @@ class BotDatabase:
                 return result
 
     async def add_admin(self, telegram_id: int, username: str = "", first_name: str = "", added_by: int = 0) -> bool:
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             # Query existing user info if details are blank
             if not username or not first_name:
                 async with db.execute("SELECT username, first_name FROM users WHERE telegram_id = ?", (telegram_id,)) as cur:
@@ -671,7 +674,7 @@ class BotDatabase:
     async def remove_admin(self, telegram_id: int) -> bool:
         if telegram_id == 93795023:
             return False  # Protected super admin / owner
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             await db.execute("DELETE FROM bot_admins WHERE telegram_id = ?", (telegram_id,))
             await db.commit()
 
@@ -680,7 +683,7 @@ class BotDatabase:
 
     async def find_user_by_query(self, query: str):
         query = query.strip().lstrip("@")
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             if query.isdigit():
                 async with db.execute("SELECT telegram_id, username, first_name FROM users WHERE telegram_id = ?", (int(query),)) as cur:
