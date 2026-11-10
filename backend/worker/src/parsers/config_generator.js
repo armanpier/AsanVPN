@@ -153,6 +153,7 @@ export function generateXrayConfig(node, allNodes = []) {
       }
     ],
     dns: {
+      queryStrategy: "UseIPv4",
       servers: [
         "https://1.1.1.1/dns-query",
         "https://8.8.8.8/dns-query",
@@ -167,6 +168,12 @@ export function generateXrayConfig(node, allNodes = []) {
     routing: {
       domainStrategy: "IPIfNonMatch",
       rules: [
+        // Route DNS server IPs through proxy
+        {
+          type: "field",
+          outboundTag: "proxy",
+          ip: ["1.1.1.1", "8.8.8.8"]
+        },
         // Iranian websites and domains direct
         {
           type: "field",

@@ -50,6 +50,7 @@ object V2RayConfigBuilder {
                 })
                 add("sniffing", JsonObject().apply {
                     addProperty("enabled", true)
+                    addProperty("routeOnly", true)
                     val destOverride = JsonArray().apply {
                         add("http")
                         add("tls")
@@ -72,6 +73,7 @@ object V2RayConfigBuilder {
                 })
                 add("sniffing", JsonObject().apply {
                     addProperty("enabled", true)
+                    addProperty("routeOnly", true)
                     val destOverride = JsonArray().apply {
                         add("http")
                         add("tls")
@@ -131,9 +133,12 @@ object V2RayConfigBuilder {
         })
         root.add("outbounds", outbounds)
 
-        // 4. DNS: Fast standard UDP resolvers
+        // 4. DNS: Fast standard UDP resolvers with DoH TCP fallback
         val dns = JsonObject().apply {
+            addProperty("queryStrategy", "UseIPv4")
             val servers = JsonArray().apply {
+                add("https://1.1.1.1/dns-query")
+                add("https://8.8.8.8/dns-query")
                 add("1.1.1.1")
                 add("8.8.8.8")
             }
@@ -145,11 +150,27 @@ object V2RayConfigBuilder {
         val routing = JsonObject().apply {
             addProperty("domainStrategy", "IPIfNonMatch")
             val rules = JsonArray().apply {
-                // Rule 0: Hijack port 53 DNS queries to internal DNS engine
+                // Rule 0: Hijack port 53 DNS queries to internal DNS engine (only from inbound tunnels)
                 add(JsonObject().apply {
                     addProperty("type", "field")
                     addProperty("outboundTag", "dns-out")
+                    val inboundsArr = JsonArray().apply {
+                        add("tun")
+                        add("socks-in")
+                    }
+                    add("inboundTag", inboundsArr)
                     addProperty("port", "53")
+                })
+
+                // Route internal DNS client queries (1.1.1.1, 8.8.8.8 via DoH 443 or UDP 53) to proxy
+                add(JsonObject().apply {
+                    addProperty("type", "field")
+                    addProperty("outboundTag", "proxy")
+                    val ipArr = JsonArray().apply {
+                        add("1.1.1.1")
+                        add("8.8.8.8")
+                    }
+                    add("ip", ipArr)
                 })
 
                 // Rule 1: Direct Iranian domains (Chocolate4Iran geosite rules)
@@ -209,7 +230,10 @@ object V2RayConfigBuilder {
         root.add("outbounds", outbounds)
 
         val dns = JsonObject().apply {
+            addProperty("queryStrategy", "UseIPv4")
             val servers = JsonArray().apply {
+                add("https://1.1.1.1/dns-query")
+                add("https://8.8.8.8/dns-query")
                 add("1.1.1.1")
                 add("8.8.8.8")
             }

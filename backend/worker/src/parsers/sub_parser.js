@@ -212,3 +212,202 @@ export function parseSubscriptionText(rawText) {
 
   return nodes;
 }
+
+export function normalizeDigits(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728))
+    .replace(/[٠-٩]/g, d => String.fromCharCode(d.charCodeAt(0) - 1584));
+}
+
+function safeDecodeUri(str) {
+  if (!str || typeof str !== 'string') return '';
+  try {
+    return decodeURIComponent(str);
+  } catch (_) {
+    return str;
+  }
+}
+
+export function parseUserInfoHeader(headerStr) {
+  if (!headerStr || typeof headerStr !== 'string') return null;
+  const normalized = normalizeDigits(headerStr);
+  const info = {};
+  normalized.split(';').forEach(p => {
+    const [k, v] = p.trim().split('=');
+    if (k && v) {
+      const num = parseInt(v, 10);
+      if (!isNaN(num)) info[k.toLowerCase()] = num;
+    }
+  });
+
+  if (info.total !== undefined) {
+    if (info.total === 0) {
+      info.traffic_remaining_bytes = -1;
+    } else {
+      const used = (info.upload || 0) + (info.download || 0);
+      info.traffic_remaining_bytes = Math.max(0, info.total - used);
+    }
+  }
+
+  if (info.expire && info.expire > 1000000000) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    info.days_left = Math.max(0, Math.ceil((info.expire - nowSec) / 86400));
+  }
+
+  return Object.keys(info).length > 0 ? info : null;
+}
+
+export function parseTrafficUnitToBytes(valStr, unitStr) {
+  const normVal = normalizeDigits(valStr);
+  const val = parseFloat(normVal);
+  if (isNaN(val)) return 0;
+  const u = (unitStr || '').trim().toUpperCase();
+  if (u.startsWith('T')) return Math.round(val * 1024 * 1024 * 1024 * 1024);
+  if (u.startsWith('G')) return Math.round(val * 1024 * 1024 * 1024);
+  if (u.startsWith('M')) return Math.round(val * 1024 * 1024);
+  if (u.startsWith('K')) return Math.round(val * 1024);
+  return Math.round(val);
+}
+
+export function extractUserInfoFromSubscription(rawText, parsedNodes = []) {
+  if (!rawText && (!parsedNodes || parsedNodes.length === 0)) return null;
+
+  // 1. Check for commented #subscription-userinfo in rawText
+  if (typeof rawText === 'string') {
+    const headerMatch = rawText.match(/(?:#|\/\/)\s*subscription-userinfo:\s*([^\r\n]+)/i);
+    if (headerMatch) {
+      const parsed = parseUserInfoHeader(headerMatch[1]);
+      if (parsed) return parsed;
+    }
+  }
+
+  // 2. Decode rawText if it is base64 encoded
+  const candidateTexts = [];
+  if (typeof rawText === 'string' && rawText.trim().length > 0) {
+    candidateTexts.push(rawText);
+    const decoded = safeBase64Decode(rawText);
+    if (decoded && decoded !== rawText) {
+      candidateTexts.push(decoded);
+      const decHeaderMatch = decoded.match(/(?:#|\/\/)\s*subscription-userinfo:\s*([^\r\n]+)/i);
+      if (decHeaderMatch) {
+        const parsed = parseUserInfoHeader(decHeaderMatch[1]);
+        if (parsed) return parsed;
+      }
+    }
+  }
+
+  // 3. Scan strings (nodes remarks + raw lines)
+  const candidateStrings = [];
+  if (Array.isArray(parsedNodes)) {
+    for (const n of parsedNodes) {
+      if (n.remark) candidateStrings.push(n.remark);
+    }
+  }
+
+  for (const txt of candidateTexts) {
+    const lines = txt.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    for (const l of lines) {
+      if (l.startsWith('#') || l.includes('📊') || l.includes('⏳') || l.includes('⌛') || l.includes('🔋') || l.includes('%F0%9F%93%8A') || l.includes('%E2%8F%B3')) {
+        candidateStrings.push(l);
+      }
+    }
+  }
+
+  let extractedRemaining = null;
+  let extractedTotal = null;
+  let extractedUsed = null;
+  let extractedDays = null;
+  let isUnlimitedTraffic = false;
+  let isUnlimitedDays = false;
+
+  for (let rawStr of candidateStrings) {
+    // Decode URI component (e.g. %F0%9F%93%8A -> 📊, %E2%8F%B3 -> ⏳)
+    let str = safeDecodeUri(rawStr);
+    // Normalize Persian/Arabic digits
+    str = normalizeDigits(str);
+
+    // 3X-UI: |📊8.79GB| or 📊 8.79 GB
+    if (extractedRemaining === null) {
+      const remMatch = str.match(/📊\s*([0-9.]+)\s*([A-Za-z]+)/);
+      if (remMatch) {
+        extractedRemaining = parseTrafficUnitToBytes(remMatch[1], remMatch[2]);
+      }
+    }
+
+    // Dummy node format: 10.0 GB🔋0 B or ∞🔋39.74 GB
+    if (extractedTotal === null || extractedUsed === null) {
+      const batMatch = str.match(/([0-9.]+|∞)\s*([A-Za-z]*)\s*🔋\s*([0-9.]+)\s*([A-Za-z]+)/);
+      if (batMatch) {
+        if (batMatch[1] === '∞') {
+          isUnlimitedTraffic = true;
+          extractedTotal = 0;
+          extractedUsed = parseTrafficUnitToBytes(batMatch[3], batMatch[4]);
+          extractedRemaining = -1;
+        } else {
+          extractedTotal = parseTrafficUnitToBytes(batMatch[1], batMatch[2]);
+          extractedUsed = parseTrafficUnitToBytes(batMatch[3], batMatch[4]);
+          if (extractedRemaining === null) {
+            extractedRemaining = Math.max(0, extractedTotal - extractedUsed);
+          }
+        }
+      }
+    }
+
+    // Days pattern: ⏳29D or ⌛ 30 or ⏳ 29 روز or ⌛ ∞
+    if (extractedDays === null && !isUnlimitedDays) {
+      if (str.includes('⌛ ∞') || str.includes('⏳ ∞') || str.includes('⌛∞') || str.includes('⏳∞')) {
+        isUnlimitedDays = true;
+        extractedDays = -1;
+      } else {
+        const daysMatch = str.match(/[⏳⌛]\s*(\d+)/);
+        if (daysMatch) {
+          extractedDays = parseInt(daysMatch[1], 10);
+        } else {
+          const altDaysMatch = str.match(/(\d+)\s*(?:[Dd]|Days?|روز)(?:\s*(?:left|باقیمانده|باقی|مانده))?/i);
+          if (altDaysMatch) {
+            extractedDays = parseInt(altDaysMatch[1], 10);
+          }
+        }
+      }
+    }
+
+    if ((extractedRemaining !== null || isUnlimitedTraffic) && (extractedDays !== null || isUnlimitedDays)) {
+      break;
+    }
+  }
+
+  if (extractedRemaining === null && extractedDays === null && extractedTotal === null && !isUnlimitedTraffic && !isUnlimitedDays) {
+    return null;
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const result = {};
+
+  if (isUnlimitedTraffic) {
+    result.total = 0;
+    result.traffic_remaining_bytes = -1;
+    result.upload = 0;
+    result.download = extractedUsed || 0;
+  } else if (extractedRemaining !== null) {
+    result.traffic_remaining_bytes = extractedRemaining;
+    result.total = extractedTotal !== null ? extractedTotal : Math.max(extractedRemaining, 10 * 1024 * 1024 * 1024);
+    result.upload = 0;
+    result.download = Math.max(0, result.total - extractedRemaining);
+  } else if (extractedTotal !== null) {
+    result.total = extractedTotal;
+    result.upload = 0;
+    result.download = extractedUsed || 0;
+    result.traffic_remaining_bytes = Math.max(0, extractedTotal - (extractedUsed || 0));
+  }
+
+  if (isUnlimitedDays) {
+    result.days_left = -1;
+    result.expire = 0;
+  } else if (extractedDays !== null) {
+    result.days_left = extractedDays;
+    result.expire = nowSec + (extractedDays * 86400);
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}

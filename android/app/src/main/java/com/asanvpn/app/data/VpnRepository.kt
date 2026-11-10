@@ -205,6 +205,16 @@ class VpnRepository(private val context: Context) {
         var isPinRejected = false
         var rejectionMessageFa: String? = null
 
+        val activeClient = if (com.asanvpn.app.service.AsanVpnService.isRunning) {
+            client.newBuilder()
+                .proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("127.0.0.1", 10809)))
+                .connectTimeout(6, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .build()
+        } else {
+            client
+        }
+
         for (baseUrl in workerEndpoints) {
             val url = "$baseUrl/api/v1/connect"
             val maskedUrl = url.replace(Regex("://[^/]+"), "://***")
@@ -216,7 +226,17 @@ class VpnRepository(private val context: Context) {
                     .header("User-Agent", "AsanVPN-Android/1.0.0")
                     .build()
 
-                client.newCall(req).execute().use { response ->
+                val callResponse = try {
+                    activeClient.newCall(req).execute()
+                } catch (e: Exception) {
+                    if (activeClient != client) {
+                        client.newCall(req).execute()
+                    } else {
+                        throw e
+                    }
+                }
+
+                callResponse.use { response ->
                     val responseStr = response.body?.string() ?: ""
                     AppLogger.logAdmin("Worker HTTP ${response.code} (Response size: ${responseStr.length} bytes)")
 

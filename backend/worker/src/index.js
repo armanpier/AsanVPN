@@ -467,7 +467,26 @@ export default {
           if (subResult && subResult.userInfo) {
             const info = subResult.userInfo;
             let hasChanged = false;
-            if (info.total !== undefined) {
+            // 1. Traffic sync
+            if (info.traffic_remaining_bytes !== undefined) {
+              if (info.traffic_remaining_bytes === -1) {
+                if (user.traffic_remaining_bytes !== -1 || user.traffic_total_bytes !== 0) {
+                  user.traffic_remaining_bytes = -1;
+                  user.traffic_total_bytes = 0;
+                  hasChanged = true;
+                }
+              } else {
+                const newRem = info.traffic_remaining_bytes;
+                const newTotal = (info.total !== undefined && info.total > 0)
+                  ? info.total
+                  : (user.traffic_total_bytes || Math.max(newRem, 10 * 1024 * 1024 * 1024));
+                if (user.traffic_remaining_bytes !== newRem || user.traffic_total_bytes !== newTotal) {
+                  user.traffic_remaining_bytes = newRem;
+                  user.traffic_total_bytes = newTotal;
+                  hasChanged = true;
+                }
+              }
+            } else if (info.total !== undefined) {
               if (info.total === 0) {
                 // 0 means UNLIMITED traffic
                 if (user.traffic_remaining_bytes !== -1 || user.traffic_total_bytes !== 0) {
@@ -485,22 +504,34 @@ export default {
                 }
               }
             }
-            if (info.expire !== undefined) {
-              if (info.expire === 0) {
-                // 0 means UNLIMITED validity
-                if (user.expires_at !== null) {
-                  user.expires_at = null;
-                  hasChanged = true;
-                }
-              } else if (info.expire > 1000000000) {
-                if (user.expires_at !== info.expire) {
-                  user.expires_at = info.expire;
-                  hasChanged = true;
-                }
+
+            // 2. Expiration sync
+            if (info.expire && info.expire > 1000000000) {
+              if (user.expires_at !== info.expire) {
+                user.expires_at = info.expire;
+                hasChanged = true;
+              }
+            } else if (info.days_left !== undefined && info.days_left > 0) {
+              const calcExp = now + info.days_left * 86400;
+              if (user.expires_at !== calcExp) {
+                user.expires_at = calcExp;
+                hasChanged = true;
+              }
+            } else if (info.expire === 0 || info.days_left === -1) {
+              // UNLIMITED validity
+              if (user.expires_at !== null) {
+                user.expires_at = null;
+                hasChanged = true;
               }
             }
             if (hasChanged) {
               await safeKvPut(env, pin, JSON.stringify(user));
+              // Sync updated limits to other panels in the background
+              if (ctx && typeof ctx.waitUntil === 'function') {
+                ctx.waitUntil(PanelManager.syncUserLimitsToPanels(env, user));
+              } else {
+                PanelManager.syncUserLimitsToPanels(env, user).catch(() => {});
+              }
             }
           }
 
@@ -604,7 +635,7 @@ export default {
         const singboxConfig = generateSingBoxConfig(primaryNode);
 
         const daysLeft = (user.expires_at && user.expires_at > 0)
-          ? Math.max(0, Math.ceil((user.expires_at - now) / 86400))
+          ? Math.max(0, Math.floor((user.expires_at - now) / 86400))
           : null;
 
         let totalBytes = user.traffic_total_bytes;

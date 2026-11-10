@@ -3,7 +3,7 @@ import { MarzbanAdapter } from './marzban.js';
 import { PasarGuardAdapter } from './pasarguard.js';
 import { HiddifyAdapter } from './hiddify.js';
 import { fetchViaSocket, PanelManager, DEFAULT_INITIAL_PANELS } from './panel_manager.js';
-import { parseSubscriptionText } from '../parsers/sub_parser.js';
+import { parseSubscriptionText, parseUserInfoHeader, extractUserInfoFromSubscription } from '../parsers/sub_parser.js';
 
 export class PanelAdapter {
   static extractUrls(userRecord) {
@@ -37,12 +37,35 @@ export class PanelAdapter {
     const isDirectIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname);
     const isCustomPort = (port !== '80' && port !== '443');
 
-    // If custom port (e.g. 9090, 2096, 14393) or direct IP, try fetchViaSocket first
+    const processPayload = (text, headers = {}) => {
+      let userInfo = null;
+      const userinfoHeader = headers['subscription-userinfo'] || (headers.get ? headers.get('subscription-userinfo') : null);
+      if (userinfoHeader) {
+        userInfo = parseUserInfoHeader(userinfoHeader);
+      }
+      const fallback = extractUserInfoFromSubscription(text);
+      if (fallback) {
+        if (!userInfo) {
+          userInfo = fallback;
+        } else {
+          if (userInfo.traffic_remaining_bytes === undefined && fallback.traffic_remaining_bytes !== undefined) {
+            userInfo.traffic_remaining_bytes = fallback.traffic_remaining_bytes;
+          }
+          if ((!userInfo.expire || userInfo.expire === 0) && fallback.expire) {
+            userInfo.expire = fallback.expire;
+            userInfo.days_left = fallback.days_left;
+          }
+        }
+      }
+      return { text, userInfo };
+    };
+
+    // If custom port (e.g. 9090, 2096, 2016, 14393) or direct IP, try fetchViaSocket first
     if (isDirectIp || isCustomPort) {
       try {
-        const sockText = await fetchViaSocket(url);
-        if (sockText && (sockText.includes('://') || sockText.length > 20)) {
-          return { text: sockText, userInfo: null };
+        const sockRes = await fetchViaSocket(url, { returnFull: true });
+        if (sockRes && (sockRes.text.includes('://') || sockRes.text.length > 20)) {
+          return processPayload(sockRes.text, sockRes.headers);
         }
       } catch (socketErr) {
         console.warn(`Initial fetchViaSocket for ${url} failed:`, socketErr.message);
@@ -68,34 +91,23 @@ export class PanelAdapter {
       if (!response.ok) {
         // Fallback to socket fetch on ANY non-2xx status (525, 403, 502, 1003, etc.)
         try {
-          const sockText = await fetchViaSocket(url);
-          return { text: sockText, userInfo: null };
+          const sockRes = await fetchViaSocket(url, { returnFull: true });
+          return processPayload(sockRes.text, sockRes.headers);
         } catch (sockErr) {
           const errBody = await response.text().catch(() => '');
           throw new Error(`Upstream panel (${panelType}) returned HTTP ${response.status}: ${errBody.slice(0, 150)}`);
         }
       }
 
-      const userinfoHeader = response.headers.get('subscription-userinfo');
-      let userInfo = null;
-      if (userinfoHeader) {
-        userInfo = {};
-        userinfoHeader.split(';').forEach(p => {
-          const [k, v] = p.trim().split('=');
-          if (k && v) {
-            const num = parseInt(v, 10);
-            if (!isNaN(num)) userInfo[k.toLowerCase()] = num;
-          }
-        });
-      }
-
+      const headersMap = {};
+      response.headers.forEach((v, k) => { headersMap[k.toLowerCase()] = v; });
       const text = await response.text();
-      return { text, userInfo };
+      return processPayload(text, headersMap);
     } catch (err) {
       clearTimeout(timeout);
       try {
-        const sockText = await fetchViaSocket(url);
-        return { text: sockText, userInfo: null };
+        const sockRes = await fetchViaSocket(url, { returnFull: true });
+        return processPayload(sockRes.text, sockRes.headers);
       } catch (sockErr) {
         throw err;
       }
@@ -197,6 +209,27 @@ export class PanelAdapter {
               node.panel_priority = target.priority;
               allParsedNodes.push(node);
             });
+
+            // Extract live userinfo from parsed nodes remarks if missing or incomplete
+            if (!val.userInfo || val.userInfo.traffic_remaining_bytes === undefined || val.userInfo.days_left === undefined) {
+              const nodeInfo = extractUserInfoFromSubscription(text, nodes);
+              if (nodeInfo) {
+                if (!val.userInfo) {
+                  val.userInfo = nodeInfo;
+                } else {
+                  if (val.userInfo.traffic_remaining_bytes === undefined && nodeInfo.traffic_remaining_bytes !== undefined) {
+                    val.userInfo.traffic_remaining_bytes = nodeInfo.traffic_remaining_bytes;
+                  }
+                  if ((!val.userInfo.expire || val.userInfo.expire === 0) && nodeInfo.expire) {
+                    val.userInfo.expire = nodeInfo.expire;
+                    val.userInfo.days_left = nodeInfo.days_left;
+                  }
+                  if ((!val.userInfo.days_left || val.userInfo.days_left <= 0) && nodeInfo.days_left) {
+                    val.userInfo.days_left = nodeInfo.days_left;
+                  }
+                }
+              }
+            }
           }
         }
       } else {
@@ -212,56 +245,74 @@ export class PanelAdapter {
     // Sort all parsed nodes by panel priority ascending
     allParsedNodes.sort((a, b) => (a.panel_priority || 99) - (b.panel_priority || 99));
 
-    // Calculate mergedUserInfo
+    // Calculate mergedUserInfo across all successful panels
     let mergedUserInfo = null;
+    let totalAccountQuota = null;
+    let minRemaining = null;
+    let sumUsedAcrossPanels = 0;
+    let earliestActiveExpiry = null;
+    let anyPanelActive = false;
+
     for (const s of successful) {
       if (s.userInfo) {
-        if (!mergedUserInfo) {
-          mergedUserInfo = { ...s.userInfo };
-          if (mergedUserInfo.total === 0) {
-            mergedUserInfo.traffic_remaining_bytes = -1;
-          } else if (typeof mergedUserInfo.total === 'number') {
-            const used = (mergedUserInfo.upload || 0) + (mergedUserInfo.download || 0);
-            mergedUserInfo.traffic_remaining_bytes = Math.max(0, mergedUserInfo.total - used);
-          }
-        } else {
-          // --- HIGHER REMAINING TRAFFIC RULE ---
-          const sIsUnlimited = (s.userInfo.total === 0);
-          const mIsUnlimited = (mergedUserInfo.total === 0 || mergedUserInfo.traffic_remaining_bytes === -1);
+        anyPanelActive = true;
+        const u = s.userInfo;
 
-          if (sIsUnlimited || mIsUnlimited) {
-            mergedUserInfo.total = 0;
-            mergedUserInfo.traffic_remaining_bytes = -1;
+        // 1. Quota & Remaining traffic
+        if (u.total !== undefined && u.total > 0) {
+          if (totalAccountQuota === null) {
+            totalAccountQuota = u.total;
           } else {
-            const sUsed = (s.userInfo.upload || 0) + (s.userInfo.download || 0);
-            const sRem = Math.max(0, (s.userInfo.total || 0) - sUsed);
-
-            const mRem = mergedUserInfo.traffic_remaining_bytes !== undefined
-              ? mergedUserInfo.traffic_remaining_bytes
-              : Math.max(0, (mergedUserInfo.total || 0) - ((mergedUserInfo.upload || 0) + (mergedUserInfo.download || 0)));
-
-            if (sRem > mRem) {
-              mergedUserInfo.total = s.userInfo.total;
-              mergedUserInfo.upload = s.userInfo.upload || 0;
-              mergedUserInfo.download = s.userInfo.download || 0;
-              mergedUserInfo.traffic_remaining_bytes = sRem;
-            } else {
-              mergedUserInfo.traffic_remaining_bytes = mRem;
-            }
-          }
-
-          // --- LATER EXPIRY DATE RULE (HIGHER DAYS REMAINED) ---
-          const sExp = s.userInfo.expire;
-          const mExp = mergedUserInfo.expire;
-
-          if (sExp === 0 || mExp === 0 || sExp === null || mExp === null) {
-            mergedUserInfo.expire = 0; // unlimited
-          } else if (sExp && mExp) {
-            mergedUserInfo.expire = Math.max(sExp, mExp); // later expiry
-          } else if (sExp) {
-            mergedUserInfo.expire = sExp;
+            totalAccountQuota = Math.max(totalAccountQuota, u.total);
           }
         }
+
+        const used = (u.upload || 0) + (u.download || 0);
+        sumUsedAcrossPanels += used;
+
+        let rem = u.traffic_remaining_bytes;
+        if (rem === undefined || rem === null) {
+          if (u.total && u.total > 0) {
+            rem = Math.max(0, u.total - used);
+          }
+        }
+        if (typeof rem === 'number' && rem >= 0) {
+          if (minRemaining === null || rem < minRemaining) {
+            minRemaining = rem;
+          }
+        }
+
+        // 2. Expiration (earliest active expiry date)
+        if (u.expire && u.expire > 1000000000) {
+          if (earliestActiveExpiry === null || u.expire < earliestActiveExpiry) {
+            earliestActiveExpiry = u.expire;
+          }
+        }
+      }
+    }
+
+    if (anyPanelActive) {
+      mergedUserInfo = {};
+      if (totalAccountQuota !== null && totalAccountQuota > 0) {
+        mergedUserInfo.total = totalAccountQuota;
+        const calculatedRem = Math.max(0, totalAccountQuota - sumUsedAcrossPanels);
+        mergedUserInfo.traffic_remaining_bytes = (minRemaining !== null)
+          ? Math.min(minRemaining, calculatedRem)
+          : calculatedRem;
+        mergedUserInfo.upload = 0;
+        mergedUserInfo.download = Math.max(0, totalAccountQuota - mergedUserInfo.traffic_remaining_bytes);
+      } else {
+        // Unlimited
+        mergedUserInfo.total = 0;
+        mergedUserInfo.traffic_remaining_bytes = -1;
+        mergedUserInfo.upload = 0;
+        mergedUserInfo.download = 0;
+      }
+
+      mergedUserInfo.expire = earliestActiveExpiry || 0;
+      if (mergedUserInfo.expire > 1000000000) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        mergedUserInfo.days_left = Math.max(0, Math.ceil((mergedUserInfo.expire - nowSec) / 86400));
       }
     }
 

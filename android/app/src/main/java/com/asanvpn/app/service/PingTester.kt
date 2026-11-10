@@ -280,6 +280,17 @@ object PingTester {
     }
 
     private fun isUsableEgressNode(node: VpnNode): Boolean {
+        // Exclude dummy or informational nodes (such as remarks with 👤, 📊, ⌛ or localhost/null IP)
+        if (node.server == "127.0.0.1" || node.server == "0.0.0.0" || node.server.equals("localhost", ignoreCase = true) ||
+            (node.server == "1.1.1.1" && node.port == 1080) || node.port <= 0) {
+            return false
+        }
+        val remark = node.remark.trim()
+        if (remark.startsWith("👤") || remark.startsWith("📊") || remark.startsWith("⌛") || remark.startsWith("⏳") ||
+            (remark.contains("🔋") && (remark.contains("⌛") || remark.contains("⏳") || remark.contains("👤")))) {
+            return false
+        }
+
         // If node has Reality public key (pbk), it is an encrypted Reality tunnel, NOT plaintext!
         if (!node.pbk.isNullOrBlank()) {
             return true

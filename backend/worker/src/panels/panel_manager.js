@@ -136,6 +136,18 @@ export async function fetchViaSocket(urlStr, options = {}) {
     throw new Error(`Socket upstream returned ${statusLine}: ${bodyPart.slice(0, 200)}`);
   }
 
+  const responseHeaders = {};
+  const headerLines = headersPart.split('\r\n');
+  for (let i = 1; i < headerLines.length; i++) {
+    const colonIdx = headerLines[i].indexOf(':');
+    if (colonIdx !== -1) {
+      const k = headerLines[i].slice(0, colonIdx).trim().toLowerCase();
+      const v = headerLines[i].slice(colonIdx + 1).trim();
+      responseHeaders[k] = v;
+    }
+  }
+
+  let finalBody = bodyPart.trim();
   // Handle chunked transfer encoding
   if (headersPart.toLowerCase().includes('transfer-encoding: chunked')) {
     let unchunked = '';
@@ -150,10 +162,18 @@ export async function fetchViaSocket(urlStr, options = {}) {
       unchunked += chunkData;
       remaining = remaining.slice(lineEnd + 2 + chunkSize + 2);
     }
-    return unchunked.trim();
+    finalBody = unchunked.trim();
   }
 
-  return bodyPart.trim();
+  if (options.returnFull) {
+    return {
+      text: finalBody,
+      headers: responseHeaders,
+      statusCode: statusCode
+    };
+  }
+
+  return finalBody;
 }
 
 export async function universalFetch(urlStr, options = {}) {
@@ -169,6 +189,15 @@ export async function universalFetch(urlStr, options = {}) {
         body: options.body
       });
       if (res.ok) {
+        if (options.returnFull) {
+          const respHeaders = {};
+          res.headers.forEach((v, k) => { respHeaders[k.toLowerCase()] = v; });
+          return {
+            text: await res.text(),
+            headers: respHeaders,
+            statusCode: res.status
+          };
+        }
         return await res.text();
       }
     } catch (e) {
@@ -989,6 +1018,43 @@ export class PanelManager {
   }
 
   /**
+   * Pushes synchronized days left (expires_at) and remaining traffic to all mapped panels
+   * so all panels stay coordinated with the current active subscription state.
+   */
+  static async syncUserLimitsToPanels(env, userRecord) {
+    if (!userRecord) return;
+    try {
+      const panels = await this.getPanels(env);
+      const updates = {};
+      if (userRecord.expires_at !== undefined) {
+        updates.expires_at = userRecord.expires_at;
+      }
+      if (userRecord.traffic_remaining_bytes === -1) {
+        updates.traffic_total_bytes = 0;
+      } else if (userRecord.traffic_remaining_bytes !== undefined && userRecord.traffic_remaining_bytes >= 0) {
+        updates.traffic_total_bytes = userRecord.traffic_remaining_bytes;
+      } else if (userRecord.traffic_total_bytes !== undefined) {
+        updates.traffic_total_bytes = userRecord.traffic_total_bytes;
+      }
+
+      if (Object.keys(updates).length === 0) return;
+
+      const promises = [];
+      if (userRecord.remote_panel_mappings && typeof userRecord.remote_panel_mappings === 'object') {
+        for (const [panelId, mapping] of Object.entries(userRecord.remote_panel_mappings)) {
+          const panel = panels.find(p => p.id === panelId);
+          if (panel && mapping) {
+            promises.push(this.updateRemoteUser(panel, mapping, updates));
+          }
+        }
+      }
+      await Promise.allSettled(promises);
+    } catch (e) {
+      console.warn('syncUserLimitsToPanels error:', e.message);
+    }
+  }
+
+  /**
    * Fetch all remote users from a panel
    */
   static async fetchRemoteUsers(panel) {
@@ -1600,7 +1666,7 @@ export class PanelManager {
 
     const urlSet = new Set();
     const panelIdSet = new Set();
-    let maxExpiry = userRecord.expires_at || null;
+    let resolvedExpiry = (userRecord.expires_at && userRecord.expires_at > 0) ? userRecord.expires_at : null;
 
     userRecord.remote_panel_mappings = userRecord.remote_panel_mappings || {};
     const normName = (userRecord.name || '').trim().toLowerCase();
@@ -1636,10 +1702,8 @@ export class PanelManager {
 
         if (existingMapping && existingMapping.subUrl) {
           resolvedSubUrl = existingMapping.subUrl;
-          if (existingMapping.expiresAt) {
-            if (maxExpiry !== null) {
-              maxExpiry = Math.max(maxExpiry, existingMapping.expiresAt);
-            }
+          if (existingMapping.expiresAt && existingMapping.expiresAt > 0) {
+            resolvedExpiry = (resolvedExpiry !== null) ? Math.min(resolvedExpiry, existingMapping.expiresAt) : existingMapping.expiresAt;
           }
         } else {
           // Check if matching user already exists on the remote panel by name/username
@@ -1662,10 +1726,8 @@ export class PanelManager {
                 panelType: panel.type,
                 expiresAt: match.expiresAt
               };
-              if (match.expiresAt === 0 || match.expiresAt === null) {
-                maxExpiry = null;
-              } else if (match.expiresAt && maxExpiry !== null) {
-                maxExpiry = Math.max(maxExpiry, match.expiresAt);
+              if (match.expiresAt && match.expiresAt > 0) {
+                resolvedExpiry = (resolvedExpiry !== null) ? Math.min(resolvedExpiry, match.expiresAt) : match.expiresAt;
               }
             }
           } catch (fetchErr) {
@@ -1690,8 +1752,8 @@ export class PanelManager {
                   panelType: panel.type,
                   expiresAt: created.expiresAt
                 };
-                if (created.expiresAt && maxExpiry !== null) {
-                  maxExpiry = Math.max(maxExpiry, created.expiresAt);
+                if (created.expiresAt && created.expiresAt > 0) {
+                  resolvedExpiry = (resolvedExpiry !== null) ? Math.min(resolvedExpiry, created.expiresAt) : created.expiresAt;
                 }
               }
             } catch (createErr) {
@@ -1720,8 +1782,8 @@ export class PanelManager {
     userRecord.upstream_sub_urls = finalUrls;
     userRecord.upstream_sub_url = finalUrls.join('\n');
     userRecord.panel_type = panelIdSet.size > 1 ? 'multi' : (chosenPanels[0]?.type || 'raw');
-    if (maxExpiry !== undefined) {
-      userRecord.expires_at = maxExpiry;
+    if (resolvedExpiry !== undefined && resolvedExpiry !== null) {
+      userRecord.expires_at = resolvedExpiry;
     }
 
     return userRecord;
