@@ -334,11 +334,11 @@ export default {
         rawMeta = await env.VPN_USERS.get('apk_meta');
       } catch (kvErr) {}
 
-      let version = "1.3.10";
-      let versionCode = 16;
-      let changelog = "حل مشکل عدم تبادل ترافیک پس از اتصال، اصلاح قواعد روتینگ هسته، دانلود مستقیم و پرسرعت بسته نصبی از لبه داخلی";
-      let totalSize = 60645531;
-      let githubUrl = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk";
+      let version = "1.3.11";
+      let versionCode = 17;
+      let changelog = "طراحی مدرن کادر ورودی پین ۱۰ رقمی، رفع بریدگی صفحه در گوشی‌های کوچک، ارتقای امنیت و سرعت اتصال";
+      let totalSize = 60645940;
+      let githubUrl = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.11/AsanVPN-v1.3.11-universal.apk";
 
       if (rawMeta) {
         try {
@@ -384,7 +384,7 @@ export default {
 
       const urlObj = new URL(request.url);
       const forceKv = urlObj.searchParams.get('source') === 'kv';
-      const targetGithubUrl = (meta && meta.versionCode && meta.versionCode >= 16 && meta.github_url) || "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk";
+      const targetGithubUrl = (meta && meta.versionCode && meta.versionCode >= 17 && meta.github_url) || "https://github.com/armanpier/AsanVPN/releases/download/v1.3.11/AsanVPN-v1.3.11-universal.apk";
 
       // If not explicitly forced to KV, 302 redirect for ultra-fast CDN download & zero KV usage
       if (!forceKv) {

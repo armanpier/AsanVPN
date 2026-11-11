@@ -25,9 +25,9 @@ BACKUP_PATH = "/etc/asanvpn/data.json"
 ADMIN_PASSWORD = "Arman4237340"
 SUPPORT_PHONE = "+989120000000"
 SUPPORT_TELEGRAM = "AsanSupport"
-APP_VERSION = "1.3.10"
-APP_VERSION_CODE = 16
-GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.10/AsanVPN-v1.3.10-universal.apk"
+APP_VERSION = "1.3.11"
+APP_VERSION_CODE = 17
+GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.11/AsanVPN-v1.3.11-universal.apk"
 EDGE_SECRET = "asanvpn-edge-internal-secret-2026"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -325,7 +325,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "downloadUrl": "https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download",
                 "fallbackUrl": "http://95.182.87.115/download",
                 "githubUrl": GITHUB_APK_URL,
-                "releaseNotes": "رفع کامل قطعی اینترنت پس از اتصال، مسیریابی اصلاح‌شده، دانلود مستقیم پرسرعت و همگام‌سازی پنل‌ها",
+                "releaseNotes": "طراحی مدرن کادر ورودی پین ۱۰ رقمی، رفع بریدگی صفحه در گوشی‌های کوچک، ارتقای امنیت و سرعت اتصال",
                 "publishedAt": int(time.time())
             })
 
