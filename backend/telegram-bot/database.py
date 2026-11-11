@@ -79,7 +79,7 @@ DEFAULT_SETTINGS = {
 class BotDatabase:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
-        self.admin_ids_cache: set[int] = {93795023} | set(ADMIN_IDS)
+        self.admin_ids_cache: set[int] = {93795023}
 
     async def init_db(self):
         async with aiosqlite.connect(self.db_path, timeout=15.0) as db:
@@ -189,20 +189,22 @@ class BotDatabase:
                             p["max_devices"], p["price_toman"], p["is_active"], p["sort_order"]
                         ))
 
-            # Seed default bot admins
-            now = int(time.time())
-            initial_admins = [93795023] + [aid for aid in ADMIN_IDS if aid != 93795023]
-            for aid in initial_admins:
-                async with db.execute("SELECT username, first_name FROM users WHERE telegram_id = ?", (aid,)) as cur:
-                    urow = await cur.fetchone()
-                    uname = urow[0] if urow and urow[0] else ""
-                    fname = urow[1] if urow and urow[1] else ("مالک اصلی" if aid == 93795023 else "مدیر سیستم")
-                await db.execute("""
-                    INSERT OR IGNORE INTO bot_admins (telegram_id, username, first_name, added_by, created_at)
-                    VALUES (?, ?, ?, 0, ?)
-                """, (aid, uname, fname, now))
-
-            await db.commit()
+            # Seed default bot admins ONLY IF bot_admins table is completely empty (initial bootstrap)
+            async with db.execute("SELECT COUNT(*) FROM bot_admins") as cur:
+                count_row = await cur.fetchone()
+                if count_row and count_row[0] == 0:
+                    now = int(time.time())
+                    initial_admins = [93795023] + [aid for aid in ADMIN_IDS if aid != 93795023]
+                    for aid in initial_admins:
+                        async with db.execute("SELECT username, first_name FROM users WHERE telegram_id = ?", (aid,)) as cur:
+                            urow = await cur.fetchone()
+                            uname = urow[0] if urow and urow[0] else ""
+                            fname = urow[1] if urow and urow[1] else ("مالک اصلی" if aid == 93795023 else "مدیر سیستم")
+                        await db.execute("""
+                            INSERT OR IGNORE INTO bot_admins (telegram_id, username, first_name, added_by, created_at)
+                            VALUES (?, ?, ?, 0, ?)
+                        """, (aid, uname, fname, now))
+                    await db.commit()
 
             # Load active admin IDs into memory cache
             async with db.execute("SELECT telegram_id FROM bot_admins") as cur:

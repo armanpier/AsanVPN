@@ -555,13 +555,15 @@ async def renew_option_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 # ----------------- PAYMENT FULFILLMENT & NOTIFICATIONS -----------------
 
-async def notify_admins(context: ContextTypes.DEFAULT_TYPE, message_html: str):
+async def notify_admins(context: ContextTypes.DEFAULT_TYPE, message_html: str, exclude_id: int = None):
     notify_sale = await db.get_setting("notify_admin_on_sale", "1")
     if notify_sale != "1":
         return
 
     admin_targets = db.get_admin_ids()
     for aid in admin_targets:
+        if exclude_id and aid == exclude_id:
+            continue
         try:
             await context.bot.send_message(chat_id=aid, text=message_html, parse_mode=ParseMode.HTML)
         except Exception as e:
@@ -667,18 +669,18 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
         except Exception as e:
             logger.error(f"Failed to send success msg to {telegram_id}: {e}")
 
-        # Notify Admin
-        admin_tag = "<b>#تمدید_تستی_مدیر (بدون پرداخت)</b>" if is_admin_test else "<b>#تمدید_تجمعی_اشتراک</b>"
-        admin_alert = (
-            f"🔔 {admin_tag}\n\n"
-            f"👤 <b>کاربر (ادمین):</b> <code>{telegram_id}</code>\n"
-            f"📦 <b>پلن:</b> {plan_title} ({traffic_gb}GB, {days} روز)\n"
-            f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان\n"
-            f"🔑 <b>کد اشتراک شارژ شده:</b> <code>{target_pin}</code>\n"
-            f"📊 <b>مجموع حجم جدید:</b> {total_traffic_gb} گیگابایت\n"
-            f"🧾 <b>شناسه پیگیری:</b> <code>{tracking_code}</code>"
-        )
-        await notify_admins(context, admin_alert)
+        # Notify Admin (ONLY for ordinary customer purchases, NEVER for admin's own purchase or admin test)
+        if not is_admin_test and not db.is_admin(telegram_id):
+            admin_alert = (
+                "🔔 <b>#تمدید_تجمعی_اشتراک</b>\n\n"
+                f"👤 <b>کاربر:</b> <code>{telegram_id}</code>\n"
+                f"📦 <b>پلن:</b> {plan_title} ({traffic_gb}GB, {days} روز)\n"
+                f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان\n"
+                f"🔑 <b>کد اشتراک شارژ شده:</b> <code>{target_pin}</code>\n"
+                f"📊 <b>مجموع حجم جدید:</b> {total_traffic_gb} گیگابایت\n"
+                f"🧾 <b>شناسه پیگیری:</b> <code>{tracking_code}</code>"
+            )
+            await notify_admins(context, admin_alert, exclude_id=telegram_id)
         return True
 
     else:
@@ -755,18 +757,18 @@ async def fulfill_paid_order(context: ContextTypes.DEFAULT_TYPE, order: dict, tr
         except Exception as e:
             logger.error(f"Failed to send success msg to {telegram_id}: {e}")
 
-        # Notify Admin
-        admin_tag = "<b>#خرید_تستی_مدیر (بدون پرداخت)</b>" if is_admin_test else "<b>#خرید_جدید</b>"
-        admin_alert = (
-            f"🔔 {admin_tag}\n\n"
-            f"👤 <b>کاربر (ادمین):</b> <code>{telegram_id}</code>\n"
-            f"📦 <b>پلن:</b> {plan_title}\n"
-            f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان (تست رایگان ادمین)\n"
-            f"🔑 <b>کد اختصاصی صادر شده:</b> <code>{pin}</code>\n"
-            f"📊 <b>حجم اختصاص داده شده:</b> {traffic_gb} گیگابایت\n"
-            f"🧾 <b>شناسه پیگیری:</b> <code>{tracking_code}</code>"
-        )
-        await notify_admins(context, admin_alert)
+        # Notify Admin (ONLY for ordinary customer purchases, NEVER for admin's own purchase or admin test)
+        if not is_admin_test and not db.is_admin(telegram_id):
+            admin_alert = (
+                "🔔 <b>#خرید_جدید</b>\n\n"
+                f"👤 <b>کاربر:</b> <code>{telegram_id}</code>\n"
+                f"📦 <b>پلن:</b> {plan_title}\n"
+                f"💰 <b>مبلغ:</b> {order['amount_toman']:,} تومان\n"
+                f"🔑 <b>کد اختصاصی صادر شده:</b> <code>{pin}</code>\n"
+                f"📊 <b>حجم اختصاص داده شده:</b> {traffic_gb} گیگابایت\n"
+                f"🧾 <b>شناسه پیگیری:</b> <code>{tracking_code}</code>"
+            )
+            await notify_admins(context, admin_alert, exclude_id=telegram_id)
         return True
 
     return False
