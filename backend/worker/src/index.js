@@ -54,7 +54,11 @@ async function getCachedUserRecord(env, pin) {
   // Fallback to VPS SQLite via Arvan Edge Gateway if not in KV (e.g. created during KV quota exhaustion)
   try {
     const vpsResp = await fetch(`https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/api/v1/admin/user?pin=${pin}`, {
-      headers: { "X-Admin-Token": "Arman4237340", "X-From-Worker": "1" }
+      headers: { 
+        "X-Admin-Token": "Arman4237340", 
+        "X-From-Worker": "1",
+        "X-Edge-Secret": "asanvpn-edge-internal-secret-2026"
+      }
     });
     if (vpsResp && vpsResp.status === 200) {
       const vpsData = await vpsResp.json();
@@ -1382,10 +1386,14 @@ export default {
           await safeKvDelete(env, `rl:${deviceId}`);
         }
 
-        if (clientIp) {
-          const ipSubnet = clientIp.includes('.') ? clientIp.split('.').slice(0, 3).join('.') + '.0/24' : clientIp;
+        const reqIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '';
+        const targetIps = Array.from(new Set([clientIp, reqIp].filter(Boolean)));
+        for (const cip of targetIps) {
+          const ipSubnet = cip.includes('.') ? cip.split('.').slice(0, 3).join('.') + '.0/24' : cip;
           memoryUserCache.delete(`rl:ip:${ipSubnet}`);
+          memoryUserCache.delete(`rl:ip:${cip}`);
           await safeKvDelete(env, `rl:ip:${ipSubnet}`);
+          await safeKvDelete(env, `rl:ip:${cip}`);
         }
 
         if (pin) {
