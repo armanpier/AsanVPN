@@ -12,10 +12,11 @@ class WorkerClient:
         self.headers = {
             "Content-Type": "application/json",
             "X-Admin-Token": self.token,
+            "X-Edge-Secret": "asanvpn-edge-internal-secret-2026",
             "User-Agent": "AsanVpn-SalesBot/1.0"
         }
 
-    async def _post_with_fallback(self, path: str, json_data: dict, timeout: float = 20.0):
+    async def _post_with_fallback(self, path: str, json_data: dict, timeout: float = 35.0):
         primary_url = f"{self.base_url}{path}"
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -120,7 +121,7 @@ class WorkerClient:
         if is_test:
             payload["is_test"] = True
 
-        data = await self._post_with_fallback("/api/v1/admin/create", payload, timeout=25.0)
+        data = await self._post_with_fallback("/api/v1/admin/create", payload, timeout=45.0)
         if data and data.get("user"):
             logger.info(f"User created: pin={data.get('user', {}).get('pin')} traffic={traffic_gb}GB days={days}")
             return data.get("user", {})
