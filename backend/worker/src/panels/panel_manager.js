@@ -1703,8 +1703,8 @@ export class PanelManager {
       }
     }
 
-    // 2. Process each chosen panel
-    for (const panel of chosenPanels) {
+    // 2. Process chosen panels concurrently in parallel (Argon optimization)
+    await Promise.allSettled(chosenPanels.map(async (panel) => {
       panelIdSet.add(panel.id);
       const pType = (panel.type || '').toLowerCase();
 
@@ -1723,36 +1723,8 @@ export class PanelManager {
             resolvedExpiry = (resolvedExpiry !== null) ? Math.min(resolvedExpiry, existingMapping.expiresAt) : existingMapping.expiresAt;
           }
         } else {
-          // Check if matching user already exists on the remote panel by name/username
-          try {
-            const remoteUsers = (preloadedRemoteUsersMap && preloadedRemoteUsersMap[panel.id])
-              ? preloadedRemoteUsersMap[panel.id]
-              : await this.fetchRemoteUsers(panel);
-            const match = remoteUsers.find(ru => {
-              const rName = (ru.name || '').trim().toLowerCase();
-              const rUser = (ru.username || '').trim().toLowerCase();
-              return (rName && rName === normName) || (rUser && rUser === normName) ||
-                     (normName && (rName.includes(normName) || normName.includes(rName)));
-            });
-
-            if (match && match.subUrl) {
-              resolvedSubUrl = match.subUrl.trim();
-              userRecord.remote_panel_mappings[panel.id] = {
-                username: match.username || match.name,
-                subUrl: resolvedSubUrl,
-                panelType: panel.type,
-                expiresAt: match.expiresAt
-              };
-              if (match.expiresAt && match.expiresAt > 0) {
-                resolvedExpiry = (resolvedExpiry !== null) ? Math.min(resolvedExpiry, match.expiresAt) : match.expiresAt;
-              }
-            }
-          } catch (fetchErr) {
-            console.warn(`Could not fetch remote users for panel ${panel.name}:`, fetchErr.message);
-          }
-
-          // If still not found on remote panel, CREATE USER ON REMOTE PANEL (if allowed)
-          if (!resolvedSubUrl && allowAutoCreate) {
+          // If allowAutoCreate is enabled, try creating user directly on remote panel first (fastest path for new users)
+          if (allowAutoCreate) {
             try {
               console.log(`Auto-creating remote user on panel ${panel.name} (${panel.type}) for PIN ${userRecord.pin}...`);
               const created = await this.createRemoteUser(panel, userRecord);
@@ -1774,7 +1746,37 @@ export class PanelManager {
                 }
               }
             } catch (createErr) {
-              console.error(`Failed to auto-create user on panel ${panel.name}:`, createErr.message);
+              console.warn(`Direct create on panel ${panel.name} failed (${createErr.message}), falling back to user lookup...`);
+            }
+          }
+
+          // Fallback: Check if matching user already exists on the remote panel by name/username
+          if (!resolvedSubUrl) {
+            try {
+              const remoteUsers = (preloadedRemoteUsersMap && preloadedRemoteUsersMap[panel.id])
+                ? preloadedRemoteUsersMap[panel.id]
+                : await this.fetchRemoteUsers(panel);
+              const match = remoteUsers.find(ru => {
+                const rName = (ru.name || '').trim().toLowerCase();
+                const rUser = (ru.username || '').trim().toLowerCase();
+                return (rName && rName === normName) || (rUser && rUser === normName) ||
+                       (normName && (rName.includes(normName) || normName.includes(rName)));
+              });
+
+              if (match && match.subUrl) {
+                resolvedSubUrl = match.subUrl.trim();
+                userRecord.remote_panel_mappings[panel.id] = {
+                  username: match.username || match.name,
+                  subUrl: resolvedSubUrl,
+                  panelType: panel.type,
+                  expiresAt: match.expiresAt
+                };
+                if (match.expiresAt && match.expiresAt > 0) {
+                  resolvedExpiry = (resolvedExpiry !== null) ? Math.min(resolvedExpiry, match.expiresAt) : match.expiresAt;
+                }
+              }
+            } catch (fetchErr) {
+              console.warn(`Could not fetch remote users for panel ${panel.name}:`, fetchErr.message);
             }
           }
         }
@@ -1783,7 +1785,7 @@ export class PanelManager {
           urlSet.add(resolvedSubUrl);
         }
       }
-    }
+    }));
 
     // Add manual custom URLs if supplied
     if (Array.isArray(manualSubUrls)) {

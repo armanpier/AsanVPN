@@ -706,6 +706,16 @@ export default {
           }), { status: 403, headers: corsHeaders });
         }
 
+        // Check traffic exhaustion (Argon optimization to prevent multi-panel leak)
+        if (user.traffic_remaining_bytes !== undefined && user.traffic_remaining_bytes !== null && user.traffic_remaining_bytes !== -1 && user.traffic_remaining_bytes <= 0) {
+          return new Response(JSON.stringify({
+            status: 'expired',
+            message_fa: 'حجم اشتراک شما به پایان رسیده است. جهت تمدید یا شارژ مجدد با پشتیبانی تماس بگیرید.',
+            support_phone: supportPhone,
+            support_telegram: supportTelegram
+          }), { status: 403, headers: corsHeaders });
+        }
+
         // Check / Bind Hardware Device Lock
         const lockResult = DeviceLock.verifyOrBind(user, deviceId);
         if (!lockResult.ok) {
@@ -1467,11 +1477,11 @@ export default {
         }
         user.active = true;
 
-        // Push updates to remote panels!
+        // Push updates to remote panels concurrently in parallel!
         if (user.remote_panel_mappings && typeof user.remote_panel_mappings === 'object') {
           try {
             const panels = await PanelManager.getPanels(env);
-            for (const [panelId, mappingInfo] of Object.entries(user.remote_panel_mappings)) {
+            await Promise.allSettled(Object.entries(user.remote_panel_mappings).map(async ([panelId, mappingInfo]) => {
               const panel = panels.find(p => p.id === panelId);
               if (panel) {
                 await PanelManager.updateRemoteUser(panel, mappingInfo, {
@@ -1480,7 +1490,7 @@ export default {
                   traffic_total_bytes: user.traffic_total_bytes
                 });
               }
-            }
+            }));
           } catch (panelUpdateErr) {
             console.warn(`Error updating remote panels during extend:`, panelUpdateErr.message);
           }
