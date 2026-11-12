@@ -150,29 +150,31 @@ export class PanelAdapter {
       }
     }
 
-    // 2. Also check any additional URLs in upstream_sub_urls or upstream_sub_url
-    const rawUrls = this.extractUrls(userRecord);
-    for (const u of rawUrls) {
-      if (!seenUrls.has(u)) {
-        seenUrls.add(u);
-        // Try matching URL hostname to a configured panel
-        const matched = panels.find(p => {
-          try {
-            const pHost = new URL(p.url).hostname;
-            const uHost = new URL(u).hostname;
-            if (pHost === uHost) return true;
-            if (p.subBaseUrl && new URL(p.subBaseUrl).hostname === uHost) return true;
-          } catch (_) {}
-          return false;
-        });
+    // 2. Only check rawUrls if no remote_panel_mappings targets were found
+    if (targets.length === 0) {
+      const rawUrls = this.extractUrls(userRecord);
+      for (const u of rawUrls) {
+        if (!seenUrls.has(u)) {
+          seenUrls.add(u);
+          // Try matching URL hostname to a configured panel
+          const matched = panels.find(p => {
+            try {
+              const pHost = new URL(p.url).hostname;
+              const uHost = new URL(u).hostname;
+              if (pHost === uHost) return true;
+              if (p.subBaseUrl && new URL(p.subBaseUrl).hostname === uHost) return true;
+            } catch (_) {}
+            return false;
+          });
 
-        targets.push({
-          url: u,
-          panelId: matched ? matched.id : `panel_raw_${targets.length + 1}`,
-          panelName: matched ? matched.name : `سرور اختصاصی ${targets.length + 1}`,
-          priority: matched ? (matched.priority || (targets.length + 1)) : (targets.length + 1),
-          panelType: matched ? matched.type : (userRecord.panel_type || 'raw')
-        });
+          targets.push({
+            url: u,
+            panelId: matched ? matched.id : `panel_raw_${targets.length + 1}`,
+            panelName: matched ? matched.name : `سرور اختصاصی ${targets.length + 1}`,
+            priority: matched ? (matched.priority || (targets.length + 1)) : (targets.length + 1),
+            panelType: matched ? matched.type : (userRecord.panel_type || 'raw')
+          });
+        }
       }
     }
 
@@ -247,10 +249,13 @@ export class PanelAdapter {
 
     // Calculate mergedUserInfo across all successful panels
     let mergedUserInfo = null;
-    let totalAccountQuota = null;
-    let minRemaining = null;
+    let totalAccountQuota = (typeof userRecord.traffic_total_bytes === 'number' && userRecord.traffic_total_bytes > 0)
+      ? userRecord.traffic_total_bytes
+      : null;
     let sumUsedAcrossPanels = 0;
-    let earliestActiveExpiry = null;
+    let latestActiveExpiry = (typeof userRecord.expires_at === 'number' && userRecord.expires_at > 1000000000)
+      ? userRecord.expires_at
+      : null;
     let anyPanelActive = false;
 
     for (const s of successful) {
@@ -258,7 +263,7 @@ export class PanelAdapter {
         anyPanelActive = true;
         const u = s.userInfo;
 
-        // 1. Quota & Remaining traffic
+        // 1. Quota & Used traffic across panels
         if (u.total !== undefined && u.total > 0) {
           if (totalAccountQuota === null) {
             totalAccountQuota = u.total;
@@ -270,35 +275,20 @@ export class PanelAdapter {
         const used = (u.upload || 0) + (u.download || 0);
         sumUsedAcrossPanels += used;
 
-        let rem = u.traffic_remaining_bytes;
-        if (rem === undefined || rem === null) {
-          if (u.total && u.total > 0) {
-            rem = Math.max(0, u.total - used);
-          }
-        }
-        if (typeof rem === 'number' && rem >= 0) {
-          if (minRemaining === null || rem < minRemaining) {
-            minRemaining = rem;
-          }
-        }
-
-        // 2. Expiration (earliest active expiry date)
+        // 2. Expiration (keep the maximum / latest active expiry date)
         if (u.expire && u.expire > 1000000000) {
-          if (earliestActiveExpiry === null || u.expire < earliestActiveExpiry) {
-            earliestActiveExpiry = u.expire;
+          if (latestActiveExpiry === null || u.expire > latestActiveExpiry) {
+            latestActiveExpiry = u.expire;
           }
         }
       }
     }
 
-    if (anyPanelActive) {
+    if (anyPanelActive || totalAccountQuota !== null || latestActiveExpiry !== null) {
       mergedUserInfo = {};
       if (totalAccountQuota !== null && totalAccountQuota > 0) {
         mergedUserInfo.total = totalAccountQuota;
-        const calculatedRem = Math.max(0, totalAccountQuota - sumUsedAcrossPanels);
-        mergedUserInfo.traffic_remaining_bytes = (minRemaining !== null)
-          ? Math.min(minRemaining, calculatedRem)
-          : calculatedRem;
+        mergedUserInfo.traffic_remaining_bytes = Math.max(0, totalAccountQuota - sumUsedAcrossPanels);
         mergedUserInfo.upload = 0;
         mergedUserInfo.download = Math.max(0, totalAccountQuota - mergedUserInfo.traffic_remaining_bytes);
       } else {
@@ -309,7 +299,7 @@ export class PanelAdapter {
         mergedUserInfo.download = 0;
       }
 
-      mergedUserInfo.expire = earliestActiveExpiry || 0;
+      mergedUserInfo.expire = latestActiveExpiry || 0;
       if (mergedUserInfo.expire > 1000000000) {
         const nowSec = Math.floor(Date.now() / 1000);
         mergedUserInfo.days_left = Math.max(0, Math.ceil((mergedUserInfo.expire - nowSec) / 86400));

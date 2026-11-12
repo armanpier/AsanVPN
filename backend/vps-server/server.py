@@ -7,6 +7,7 @@ Zero external pip dependencies (uses Python 3 standard library: http.server, sql
 
 import sys
 import os
+import re
 import json
 import sqlite3
 import time
@@ -143,6 +144,114 @@ def generate_secure_10digit_pin(existing_checker) -> str:
         if not existing_checker(cand):
             return cand
 
+def sync_3xui_sqlite(user_data):
+    """
+    Directly synchronizes user totalGB and expiryTime into local 3X-UI SQLite database (/etc/x-ui/x-ui.db).
+    Guarantees zero-latency update of 3X-UI clients without requiring external web session tokens.
+    """
+    xui_db_path = "/etc/x-ui/x-ui.db"
+    if not os.path.exists(xui_db_path):
+        return
+    try:
+        if isinstance(user_data, str):
+            user_data = json.loads(user_data)
+        if not isinstance(user_data, dict):
+            return
+
+        total_bytes = int(user_data.get("traffic_total_bytes", 0) or 0)
+        expires_at = int(user_data.get("expires_at", 0) or 0)
+        expiry_ms = expires_at * 1000 if expires_at > 0 else 0
+        is_active = 1 if user_data.get("active", True) else 0
+
+        # Candidate identifiers for 3X-UI client
+        possible_identifiers = set()
+        
+        # From remote_panel_mappings
+        mappings = user_data.get("remote_panel_mappings") or {}
+        if isinstance(mappings, dict):
+            for p_id, p_info in mappings.items():
+                if isinstance(p_info, dict):
+                    if p_info.get("username"):
+                        possible_identifiers.add(str(p_info["username"]).strip())
+                    if p_info.get("clientUuid"):
+                        possible_identifiers.add(str(p_info["clientUuid"]).strip())
+
+        # From user name / email / pin
+        name = str(user_data.get("name", "")).strip()
+        pin = str(user_data.get("pin", "")).strip()
+        if name:
+            possible_identifiers.add(name)
+            clean_tg = re.sub(r'[^a-zA-Z0-9_]', '', name.replace('@', ''))
+            if clean_tg:
+                possible_identifiers.add(clean_tg)
+                if pin:
+                    possible_identifiers.add(f"telegram{clean_tg}_{pin[-6:]}")
+                    possible_identifiers.add(f"{clean_tg}_{pin[-6:]}")
+        if pin:
+            possible_identifiers.add(f"%_{pin[-6:]}")
+            possible_identifiers.add(f"%{pin}%")
+
+        with sqlite3.connect(xui_db_path, timeout=5) as conn:
+            cur = conn.cursor()
+            
+            # Find matching client in client_traffics
+            matched_emails = set()
+            for ident in possible_identifiers:
+                if "%" in ident:
+                    cur.execute("SELECT email FROM client_traffics WHERE email LIKE ?", (ident,))
+                else:
+                    cur.execute("SELECT email FROM client_traffics WHERE email = ?", (ident,))
+                for row in cur.fetchall():
+                    if row and row[0]:
+                        matched_emails.add(row[0])
+
+            if not matched_emails and pin:
+                cur.execute("SELECT email FROM client_traffics WHERE email LIKE ?", (f"%{pin[-6:]}%",))
+                for row in cur.fetchall():
+                    if row and row[0]:
+                        matched_emails.add(row[0])
+
+            if not matched_emails:
+                return
+
+            # 1. Update client_traffics
+            for email in matched_emails:
+                cur.execute(
+                    "UPDATE client_traffics SET total = ?, expiry_time = ?, enable = ? WHERE email = ?",
+                    (total_bytes, expiry_ms, is_active, email)
+                )
+
+            # 2. Update inbounds table (settings JSON column)
+            cur.execute("SELECT id, settings FROM inbounds")
+            inbounds = cur.fetchall()
+            for inb_id, inb_settings_raw in inbounds:
+                if not inb_settings_raw:
+                    continue
+                try:
+                    inb_settings = json.loads(inb_settings_raw)
+                    clients = inb_settings.get("clients", [])
+                    modified = False
+                    for c in clients:
+                        c_email = c.get("email", "")
+                        c_id = c.get("id", "")
+                        if c_email in matched_emails or c_id in possible_identifiers:
+                            c["totalGB"] = total_bytes
+                            c["expiryTime"] = expiry_ms
+                            c["enable"] = bool(is_active)
+                            modified = True
+                    if modified:
+                        cur.execute(
+                            "UPDATE inbounds SET settings = ? WHERE id = ?",
+                            (json.dumps(inb_settings, ensure_ascii=False), inb_id)
+                        )
+                except Exception as json_err:
+                    logging.warning(f"[3X-UI Sync] Failed to parse inbound {inb_id} settings: {json_err}")
+
+            conn.commit()
+            logging.info(f"[3X-UI Sync] Synced {matched_emails} in 3X-UI (Total: {total_bytes}, Expiry: {expiry_ms})")
+    except Exception as e:
+        logging.warning(f"[3X-UI Sync] Error synchronizing with /etc/x-ui/x-ui.db: {e}")
+
 class Database:
     def __init__(self, db_path=DB_PATH):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -179,6 +288,12 @@ class Database:
                 VALUES (?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
             """, (key, value, int(time.time())))
+        # Auto-sync to local 3X-UI if this is a user record
+        if isinstance(key, str) and (len(key) == 8 or len(key) == 10) and key.isdigit():
+            try:
+                sync_3xui_sqlite(value)
+            except Exception:
+                pass
 
     def delete(self, key):
         with self._lock, self.conn:

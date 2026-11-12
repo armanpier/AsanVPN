@@ -228,9 +228,9 @@ export const DEFAULT_INITIAL_PANELS = [
     id: 'panel_pasarguard_default',
     name: 'سرور پاسارگاد (PasarGuard)',
     type: 'pasarguard',
-    url: 'https://pasarguard.example.com:8000',
-    apiKey: 'pg_key_your_pasarguard_token_here',
-    subBaseUrl: 'https://sub.example.com:9090',
+    url: 'https://irtun.darklink.ir',
+    apiKey: 'pg_key_f85f5abb-13cc-4dc5-b3fc-8a77c2026e94',
+    subBaseUrl: 'https://irsub.trafficfast.ir:9090',
     priority: 2,
     autoSync: true,
     lastSync: null,
@@ -290,6 +290,13 @@ export class PanelManager {
       }
       if (p.subBaseUrl && (p.subBaseUrl.includes('13.140.94.235') || p.subBaseUrl.includes('13.140.84.27') || p.subBaseUrl.includes(':2096'))) {
         p.subBaseUrl = p.subBaseUrl.replace(/13\.140\.(94\.235|84\.27)/g, '95.182.87.115').replace(':2096', ':2016');
+        needsSave = true;
+      }
+      // Auto-migrate PasarGuard from blocked port 8000 to standard HTTPS port 443
+      if (p.url && (p.url.includes('irtun.darklink.ir:8000') || p.url.includes('pasarguard.example.com'))) {
+        p.url = 'https://irtun.darklink.ir';
+        p.apiKey = 'pg_key_f85f5abb-13cc-4dc5-b3fc-8a77c2026e94';
+        p.subBaseUrl = 'https://irsub.trafficfast.ir:9090';
         needsSave = true;
       }
     }
@@ -1015,10 +1022,10 @@ export class PanelManager {
           }
 
           if (updates.traffic_total_bytes !== undefined || updates.expires_at !== undefined) {
-            const ggPayload = {};
+            const ggPayload = { usernames: [username] };
             if (updates.traffic_total_bytes !== undefined) ggPayload.limit_usage = updates.traffic_total_bytes;
             if (updates.expires_at !== undefined) ggPayload.limit_expire = updates.expires_at;
-            await universalFetch(`${url}/api/subscriptions/${encodeURIComponent(username)}`, {
+            await universalFetch(`${url}/api/subscriptions`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',

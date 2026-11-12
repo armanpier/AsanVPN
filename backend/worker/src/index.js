@@ -752,9 +752,7 @@ export default {
                 }
               } else {
                 const newRem = info.traffic_remaining_bytes;
-                const newTotal = (info.total !== undefined && info.total > 0)
-                  ? info.total
-                  : (user.traffic_total_bytes || Math.max(newRem, 10 * 1024 * 1024 * 1024));
+                const newTotal = Math.max(user.traffic_total_bytes || 0, (info.total !== undefined && info.total > 0) ? info.total : 0);
                 if (user.traffic_remaining_bytes !== newRem || user.traffic_total_bytes !== newTotal) {
                   user.traffic_remaining_bytes = newRem;
                   user.traffic_total_bytes = newTotal;
@@ -771,25 +769,28 @@ export default {
                 }
               } else {
                 const used = (info.upload || 0) + (info.download || 0);
-                const rem = Math.max(0, info.total - used);
-                if (user.traffic_remaining_bytes !== rem || user.traffic_total_bytes !== info.total) {
+                const newTotal = Math.max(user.traffic_total_bytes || 0, info.total || 0);
+                const rem = Math.max(0, newTotal - used);
+                if (user.traffic_remaining_bytes !== rem || user.traffic_total_bytes !== newTotal) {
                   user.traffic_remaining_bytes = rem;
-                  user.traffic_total_bytes = info.total;
+                  user.traffic_total_bytes = newTotal;
                   hasChanged = true;
                 }
               }
             }
 
-            // 2. Expiration sync
+            // 2. Expiration sync: NEVER DOWNGRADE expiration if KV has a later expiration from user purchase!
             if (info.expire && info.expire > 1000000000) {
-              if (user.expires_at !== info.expire) {
-                user.expires_at = info.expire;
+              const bestExpire = Math.max(user.expires_at || 0, info.expire);
+              if (user.expires_at !== bestExpire) {
+                user.expires_at = bestExpire;
                 hasChanged = true;
               }
             } else if (info.days_left !== undefined && info.days_left > 0) {
               const calcExp = now + info.days_left * 86400;
-              if (user.expires_at !== calcExp) {
-                user.expires_at = calcExp;
+              const bestExpire = Math.max(user.expires_at || 0, calcExp);
+              if (user.expires_at !== bestExpire) {
+                user.expires_at = bestExpire;
                 hasChanged = true;
               }
             } else if (info.expire === 0 || info.days_left === -1) {
@@ -818,7 +819,8 @@ export default {
               if (isSignificant) {
                 user.last_kv_save_at = now;
                 user.last_saved_traffic_bytes = user.traffic_remaining_bytes;
-                await safeKvPut(env, pin, JSON.stringify(user));
+                updateCachedUserRecord(pin, user);
+        await safeKvPut(env, pin, JSON.stringify(user));
                 // Sync updated limits to other panels in the background
                 if (ctx && typeof ctx.waitUntil === 'function') {
                   ctx.waitUntil(PanelManager.syncUserLimitsToPanels(env, user));
@@ -841,7 +843,8 @@ export default {
             // Only save cached_nodes to KV if missing (avoids rewriting KV on every connect)
             if (!user.cached_nodes || user.cached_nodes.length === 0) {
               user.cached_nodes = nodes;
-              await safeKvPut(env, pin, JSON.stringify(user));
+              updateCachedUserRecord(pin, user);
+        await safeKvPut(env, pin, JSON.stringify(user));
             } else {
               user.cached_nodes = nodes;
             }
@@ -1126,6 +1129,7 @@ export default {
           } catch (e) {}
         }
 
+        updateCachedUserRecord(pin, user);
         await safeKvPut(env, pin, JSON.stringify(user));
 
         return new Response(JSON.stringify({
@@ -1364,6 +1368,7 @@ export default {
         DeviceLock.resetLock(user);
         user.lockout_cleared_at = Math.floor(Date.now() / 1000);
         user.lockout_cleared = true;
+        updateCachedUserRecord(pin, user);
         await safeKvPut(env, pin, JSON.stringify(user));
 
         // Clear rate limits for all associated devices and PIN
@@ -1414,7 +1419,8 @@ export default {
               const user = JSON.parse(raw);
               user.lockout_cleared_at = now;
               user.lockout_cleared = true;
-              await safeKvPut(env, pin, JSON.stringify(user));
+              updateCachedUserRecord(pin, user);
+        await safeKvPut(env, pin, JSON.stringify(user));
 
               const devs = [user.device_id, ...(Array.isArray(user.devices) ? user.devices : [])].filter(Boolean);
               for (const d of devs) {
@@ -1496,6 +1502,7 @@ export default {
           }
         }
 
+        updateCachedUserRecord(pin, user);
         await safeKvPut(env, pin, JSON.stringify(user));
 
         return new Response(JSON.stringify({
