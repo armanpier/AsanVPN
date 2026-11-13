@@ -61,8 +61,10 @@ fun PinScreen(
     errorMessage: String?,
     isSuccess: Boolean,
     lockoutUntil: Long = 0L,
-    appVersion: String = "1.3.2",
+    appVersion: String = "1.3.11",
     newVersionAvailable: String? = null,
+    isDarkMode: Boolean = false,
+    onToggleTheme: () -> Unit = {},
     onCheckUpdate: () -> Unit = {},
     onPinComplete: (String) -> Unit,
     onLockoutExpired: () -> Unit = {},
@@ -78,6 +80,8 @@ fun PinScreen(
     var isAdminMode by remember { mutableStateOf(prefs.isAdmin) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    val colors = LuxuryTheme.colors
 
     // Live lockout ticker
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -159,7 +163,7 @@ fun PinScreen(
         if (!errorMessage.isNullOrEmpty()) {
             enteredPin = ""
             performErrorHaptic()
-            screenGlowColor = RedOff.copy(alpha = 0.2f)
+            screenGlowColor = colors.coralRed.copy(alpha = 0.2f)
             delay(1000)
             screenGlowColor = Color.Transparent
         }
@@ -169,7 +173,7 @@ fun PinScreen(
     LaunchedEffect(isSuccess) {
         if (isSuccess) {
             performSuccessHaptic()
-            screenGlowColor = GreenConnected.copy(alpha = 0.25f)
+            screenGlowColor = colors.jadeGreen.copy(alpha = 0.25f)
             delay(1000)
             screenGlowColor = Color.Transparent
         }
@@ -255,9 +259,9 @@ fun PinScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(NeumorphBg)
+            .background(colors.backgroundBrush)
     ) {
-        // Dynamic Glow Layer (Red on Error / Green on Success)
+        // Dynamic Glow Layer
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -266,32 +270,81 @@ fun PinScreen(
 
         val scrollState = rememberScrollState()
 
-        // Main UI Column
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header Section
+            // Header Bar with Theme Toggle & Info
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Info (i) button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .luxuryCushion(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                        .clickable { showDebugDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "اطلاعات",
+                        tint = colors.textSecondary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+
+                // Title Brand Badge
+                Text(
+                    text = "آسان وی‌پی‌ان",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = colors.textPrimary
+                )
+
+                // Theme Switcher Button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .luxuryCushion(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                        .clickable { onToggleTheme() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (colors.isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = "تغییر تم",
+                        tint = if (colors.isDark) Color(0xFFFBBF24) else Color(0xFF6366F1),
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+
+            // Input Instructions
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 10.dp)
+                modifier = Modifier.padding(top = 16.dp)
             ) {
                 Text(
                     text = "کد ۱۰ رقمی خود را وارد کنید",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.Black,
+                    color = colors.textPrimary,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "کد اشتراک ۱۰ رقمی (یا ۸ رقمی) اختصاصی خود را وارد نمایید",
-                    fontSize = 13.sp,
-                    color = TextSecondary,
+                    text = "کد اشتراک اختصاصی خود را وارد یا جای‌گذاری نمایید",
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = colors.textSecondary,
                     textAlign = TextAlign.Center
                 )
 
@@ -331,7 +384,7 @@ fun PinScreen(
                     )
                 )
 
-                // 10 Visible Pin Indicator Boxes (Two rows of 5 neumorphic wells)
+                // 10 Visible Pin Indicator Boxes (Two rows of 5 luxury wells)
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -352,16 +405,16 @@ fun PinScreen(
                                         .size(width = 46.dp, height = 48.dp)
                                         .then(
                                             if (hasDigit) {
-                                                Modifier.neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
+                                                Modifier.luxuryCushion(shape = RoundedCornerShape(14.dp), elevation = 4.dp)
                                             } else {
-                                                Modifier.neumorphicSunken(shape = RoundedCornerShape(12.dp))
+                                                Modifier.luxuryWell(shape = RoundedCornerShape(14.dp))
                                             }
                                         )
                                         .then(
                                             if (isCurrent) {
-                                                Modifier.border(2.dp, AccentTeal, RoundedCornerShape(12.dp))
+                                                Modifier.border(2.dp, colors.jadeGreen, RoundedCornerShape(14.dp))
                                             } else if (isSuccess) {
-                                                Modifier.border(2.dp, GreenConnected, RoundedCornerShape(12.dp))
+                                                Modifier.border(2.dp, colors.jadeGreen, RoundedCornerShape(14.dp))
                                             } else Modifier
                                         )
                                         .clickable {
@@ -375,7 +428,7 @@ fun PinScreen(
                                             text = digitChar,
                                             fontSize = 22.sp,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = TextPrimary,
+                                            color = colors.textPrimary,
                                             textAlign = TextAlign.Center
                                         )
                                     } else if (isCurrent) {
@@ -383,14 +436,14 @@ fun PinScreen(
                                             modifier = Modifier
                                                 .width(2.5.dp)
                                                 .height(18.dp)
-                                                .background(AccentTeal, RoundedCornerShape(1.dp))
+                                                .background(colors.jadeGreen, RoundedCornerShape(1.dp))
                                         )
                                     } else {
                                         Text(
                                             text = "·",
                                             fontSize = 20.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = TextMuted,
+                                            color = colors.textMuted,
                                             textAlign = TextAlign.Center
                                         )
                                     }
@@ -413,16 +466,16 @@ fun PinScreen(
                                         .size(width = 46.dp, height = 48.dp)
                                         .then(
                                             if (hasDigit) {
-                                                Modifier.neumorphicRaised(shape = RoundedCornerShape(12.dp), elevation = 4.dp)
+                                                Modifier.luxuryCushion(shape = RoundedCornerShape(14.dp), elevation = 4.dp)
                                             } else {
-                                                Modifier.neumorphicSunken(shape = RoundedCornerShape(12.dp))
+                                                Modifier.luxuryWell(shape = RoundedCornerShape(14.dp))
                                             }
                                         )
                                         .then(
                                             if (isCurrent) {
-                                                Modifier.border(2.dp, AccentTeal, RoundedCornerShape(12.dp))
+                                                Modifier.border(2.dp, colors.jadeGreen, RoundedCornerShape(14.dp))
                                             } else if (isSuccess) {
-                                                Modifier.border(2.dp, GreenConnected, RoundedCornerShape(12.dp))
+                                                Modifier.border(2.dp, colors.jadeGreen, RoundedCornerShape(14.dp))
                                             } else Modifier
                                         )
                                         .clickable {
@@ -436,7 +489,7 @@ fun PinScreen(
                                             text = digitChar,
                                             fontSize = 22.sp,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = TextPrimary,
+                                            color = colors.textPrimary,
                                             textAlign = TextAlign.Center
                                         )
                                     } else if (isCurrent) {
@@ -444,14 +497,14 @@ fun PinScreen(
                                             modifier = Modifier
                                                 .width(2.5.dp)
                                                 .height(18.dp)
-                                                .background(AccentTeal, RoundedCornerShape(1.dp))
+                                                .background(colors.jadeGreen, RoundedCornerShape(1.dp))
                                         )
                                     } else {
                                         Text(
                                             text = "·",
                                             fontSize = 20.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = TextMuted,
+                                            color = colors.textMuted,
                                             textAlign = TextAlign.Center
                                         )
                                     }
@@ -461,12 +514,12 @@ fun PinScreen(
                     }
                 }
 
-                // Live Preview Badge when digits are entered
+                // Live Preview Badge
                 if (enteredPin.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
-                            .neumorphicSunken(shape = RoundedCornerShape(14.dp))
+                            .luxuryWell(shape = RoundedCornerShape(16.dp))
                             .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Row(
@@ -476,7 +529,7 @@ fun PinScreen(
                             Text(
                                 text = "کد وارد شده:",
                                 fontSize = 12.sp,
-                                color = TextSecondary
+                                color = colors.textSecondary
                             )
                             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                                 val formattedPin = when {
@@ -488,20 +541,20 @@ fun PinScreen(
                                     text = formattedPin,
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = AccentTeal,
-                                    letterSpacing = 2.5.sp
+                                    color = colors.jadeGreen,
+                                    letterSpacing = 2.sp
                                 )
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Paste from Clipboard Button (Neumorphic Raised Pill)
+                // Paste from Clipboard Button
                 Box(
                     modifier = Modifier
-                        .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                        .luxuryCushion(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
                         .clickable(enabled = !isLockedOut) { handlePasteFromClipboard() }
                         .padding(horizontal = 14.dp, vertical = 7.dp)
                 ) {
@@ -512,19 +565,19 @@ fun PinScreen(
                         Icon(
                             imageVector = Icons.Default.ContentPaste,
                             contentDescription = "جای‌گذاری کد",
-                            tint = AccentTeal,
+                            tint = colors.skyBlue,
                             modifier = Modifier.size(15.dp)
                         )
                         Text(
                             text = "جای‌گذاری کد (Paste)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = AccentTeal
+                            color = colors.skyBlue
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Lockout Banner or Status Message
                 if (isLockedOut) {
@@ -535,10 +588,8 @@ fun PinScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
-                            .background(Color(0xFFFEF2F2), RoundedCornerShape(16.dp))
-                            .border(1.dp, RedOff.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                            .luxuryCushion(shape = RoundedCornerShape(18.dp), elevation = 4.dp)
+                            .border(1.dp, colors.coralRed.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
                             .padding(vertical = 12.dp, horizontal = 16.dp)
                     ) {
                         Column(
@@ -552,15 +603,15 @@ fun PinScreen(
                                 Icon(
                                     imageVector = Icons.Default.LockClock,
                                     contentDescription = "قفل موقت",
-                                    tint = RedOff,
+                                    tint = colors.coralRed,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "ورود ۳ بار ناموفق بود - حساب موقتاً مسدود شد",
-                                    fontSize = 13.sp,
+                                    fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = RedOff
+                                    color = colors.coralRed
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
@@ -569,15 +620,14 @@ fun PinScreen(
                                 fontSize = 16.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = colors.textPrimary
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             var isCheckingUnlock by remember { mutableStateOf(false) }
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isCheckingUnlock) Color.LightGray.copy(alpha = 0.3f) else AccentTeal.copy(alpha = 0.12f))
-                                    .border(1.dp, AccentTeal.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                    .background(colors.jadeGreen.copy(alpha = 0.15f))
                                     .clickable(enabled = !isCheckingUnlock) {
                                         isCheckingUnlock = true
                                         onCheckLockout(enteredPin.ifEmpty { prefs.savedPin ?: "" }) {
@@ -586,55 +636,44 @@ fun PinScreen(
                                     }
                                     .padding(horizontal = 14.dp, vertical = 7.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.LockOpen,
-                                        contentDescription = "استعلام رفع مسدودی",
-                                        tint = AccentTeal,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = if (isCheckingUnlock) "در حال استعلام از سرور..." else "🔓 استعلام رفع مسدودی از سرور",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = AccentTeal
-                                    )
-                                }
+                                Text(
+                                    text = if (isCheckingUnlock) "در حال استعلام..." else "🔓 استعلام رفع مسدودی از سرور",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.jadeGreen
+                                )
                             }
                         }
                     }
                 } else if (isLoading) {
                     CircularProgressIndicator(
-                        color = AccentTeal,
-                        modifier = Modifier.size(30.dp),
+                        color = colors.jadeGreen,
+                        modifier = Modifier.size(28.dp),
                         strokeWidth = 3.dp
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "در حال بررسی کد اشتراک...",
-                        fontSize = 13.sp,
-                        color = TextSecondary
+                        fontSize = 12.sp,
+                        color = colors.textSecondary
                     )
                 } else if (!errorMessage.isNullOrEmpty()) {
                     Text(
                         text = errorMessage,
-                        fontSize = 14.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = RedOff,
+                        color = colors.coralRed,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
             }
 
-            // ---------------- 3D NEUMORPHIC ATM-STYLE KEYPAD ----------------
+            // ==================== 3D ATM-STYLE TACTILE KEYPAD ====================
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp),
+                    .padding(bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val rows = listOf(
@@ -653,7 +692,7 @@ fun PinScreen(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(58.dp),
+                                    .height(56.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 val buttonAlpha = if (isLockedOut) 0.35f else 1f
@@ -662,15 +701,15 @@ fun PinScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .neumorphicRaised(shape = RoundedCornerShape(18.dp), elevation = 4.dp)
+                                                .luxuryCushion(shape = RoundedCornerShape(18.dp), elevation = 4.dp)
                                                 .clickable(enabled = !isLockedOut) { onBackspacePress() },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.AutoMirrored.Filled.Backspace,
                                                 contentDescription = "پاک کردن",
-                                                tint = TextSecondary.copy(alpha = buttonAlpha),
-                                                modifier = Modifier.size(24.dp)
+                                                tint = colors.textSecondary.copy(alpha = buttonAlpha),
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         }
                                     }
@@ -682,10 +721,10 @@ fun PinScreen(
                                                 .then(
                                                     if (canSubmit) {
                                                         Modifier
-                                                            .shadow(6.dp, RoundedCornerShape(18.dp), ambientColor = GreenConnected.copy(alpha = 0.4f))
-                                                            .background(GreenConnected, RoundedCornerShape(18.dp))
+                                                            .shadow(6.dp, RoundedCornerShape(18.dp), ambientColor = colors.jadeGreen.copy(alpha = 0.45f))
+                                                            .background(colors.jadeGreen, RoundedCornerShape(18.dp))
                                                     } else {
-                                                        Modifier.neumorphicRaised(shape = RoundedCornerShape(18.dp), elevation = 2.dp)
+                                                        Modifier.luxuryCushion(shape = RoundedCornerShape(18.dp), elevation = 3.dp)
                                                     }
                                                 )
                                                 .clickable(enabled = canSubmit) {
@@ -701,14 +740,14 @@ fun PinScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.Check,
                                                     contentDescription = "تایید",
-                                                    tint = if (canSubmit) Color.White else TextMuted.copy(alpha = 0.4f),
-                                                    modifier = Modifier.size(24.dp)
+                                                    tint = if (canSubmit) Color.White else colors.textMuted.copy(alpha = 0.4f),
+                                                    modifier = Modifier.size(22.dp)
                                                 )
                                                 if (canSubmit) {
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text(
                                                         text = "تایید",
-                                                        fontSize = 15.sp,
+                                                        fontSize = 14.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Color.White
                                                     )
@@ -720,15 +759,15 @@ fun PinScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .neumorphicRaised(shape = RoundedCornerShape(18.dp), elevation = 5.dp)
+                                                .luxuryCushion(shape = RoundedCornerShape(18.dp), elevation = 5.dp)
                                                 .clickable(enabled = !isLockedOut) { onDigitPress(item) },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = item,
-                                                fontSize = 28.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextPrimary.copy(alpha = buttonAlpha)
+                                                fontSize = 26.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = colors.textPrimary.copy(alpha = buttonAlpha)
                                             )
                                         }
                                     }
@@ -738,13 +777,15 @@ fun PinScreen(
                     }
                 }
 
-                // Telegram Bot Buy / Renew Button (Neumorphic Warm Accent Pill)
+                // Telegram Bot Buy / Renew Button
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .height(46.dp)
+                        .fillMaxWidth(0.92f)
+                        .height(48.dp)
                         .padding(top = 4.dp)
-                        .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
+                        .shadow(4.dp, RoundedCornerShape(20.dp), ambientColor = colors.coralRed.copy(alpha = 0.2f))
+                        .background(colors.coralCtaBrush, RoundedCornerShape(20.dp))
+                        .border(1.dp, colors.coralCtaBorder, RoundedCornerShape(20.dp))
                         .clickable {
                             try {
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/asan_vpn_p_bot"))
@@ -763,20 +804,20 @@ fun PinScreen(
                         Icon(
                             imageVector = Icons.Default.ShoppingCart,
                             contentDescription = "خرید اشتراک",
-                            tint = AccentCoral,
+                            tint = colors.coralCtaText,
                             modifier = Modifier.size(17.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "خرید یا تمدید اشتراک (ربات تلگرام)",
+                            text = "خرید یا تمدید اشتراک در تلگرام",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentCoral
+                            fontWeight = FontWeight.ExtraBold,
+                            color = colors.coralCtaText
                         )
                     }
                 }
 
-                // App Version and Discreet Debug Button
+                // Version and Diagnostic Link
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -793,71 +834,41 @@ fun PinScreen(
                             text = if (newVersionAvailable != null) "نسخه جدید: $newVersionAvailable" else "نسخه $appVersion",
                             fontSize = 11.sp,
                             fontWeight = if (newVersionAvailable != null) FontWeight.Bold else FontWeight.Normal,
-                            color = if (newVersionAvailable != null) Color(0xFFDC2626) else TextMuted
+                            color = if (newVersionAvailable != null) Color(0xFFEF4444) else colors.textMuted
                         )
-                        if (newVersionAvailable != null) {
-                            Icon(
-                                imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = "به‌روزرسانی",
-                                tint = Color(0xFFDC2626),
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
                     }
                     Spacer(modifier = Modifier.width(16.dp))
-                    TextButton(
-                        onClick = { showDebugDialog = true }
-                    ) {
+                    TextButton(onClick = { showDebugDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.BugReport,
                             contentDescription = "دیباگ",
-                            tint = TextMuted,
+                            tint = colors.textMuted,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "مشاهده گزارش خطا",
+                            text = "گزارش وضعیت",
                             fontSize = 11.sp,
-                            color = TextSecondary
+                            color = colors.textSecondary
                         )
                     }
                 }
             }
         }
 
-        // Debug Dialog (Dual-Tier Security: Simple user vs Admin mode)
+        // Diagnostics Report Dialog
         if (showDebugDialog) {
             val currentLogText = if (isAdminMode) AppLogger.getAdminLog() else AppLogger.getUserLog()
 
             AlertDialog(
                 onDismissRequest = { showDebugDialog = false },
                 title = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (isAdminMode) "گزارش فنی و دیباگ (مدیر)" else "گزارش وضعیت اتصال",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        if (isAdminMode) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = GreenConnected.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "دسترسی مدیر",
-                                    color = GreenConnected,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = if (isAdminMode) "گزارش فنی و دیباگ (مدیر)" else "گزارش وضعیت اتصال",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
                 },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -865,37 +876,17 @@ fun PinScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 120.dp, max = 280.dp)
-                                .neumorphicSunken(shape = RoundedCornerShape(12.dp))
+                                .luxuryWell(shape = RoundedCornerShape(14.dp))
                                 .padding(12.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
                             Text(
                                 text = currentLogText,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = if (isAdminMode) AccentTeal else TextSecondary,
-                                lineHeight = 17.sp
+                                color = colors.textSecondary,
+                                lineHeight = 16.sp
                             )
-                        }
-
-                        if (!isAdminMode) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TextButton(onClick = { showAdminAuthDialog = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = AccentCoral
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("مشاهده گزارش کامل (مخصوص مدیر)", fontSize = 11.sp, color = AccentCoral)
-                                }
-                            }
                         }
                     }
                 },
@@ -907,93 +898,17 @@ fun PinScreen(
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, "گزارش در کلیپ‌بورد کپی شد", Toast.LENGTH_SHORT).show()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentTeal)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.jadeGreen)
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "کپی", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("کپی لاگ", fontSize = 13.sp)
+                        Text("کپی لاگ", fontSize = 12.sp)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDebugDialog = false }) {
-                        Text("بستن", color = TextSecondary)
+                        Text("بستن", color = colors.textSecondary)
                     }
-                },
-                containerColor = NeumorphSurface,
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
-
-        if (showAdminAuthDialog) {
-            AlertDialog(
-                onDismissRequest = {
-                    showAdminAuthDialog = false
-                    adminPasswordInput = ""
-                },
-                title = {
-                    Text("احراز هویت مدیر", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                },
-                text = {
-                    Column {
-                        Text(
-                            "جهت مشاهده آدرس سرورها، کانفیگ‌ها و لاگ فنی، رمز عبور یا کد مدیریت را وارد فرمایید:",
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            lineHeight = 18.sp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = adminPasswordInput,
-                            onValueChange = { adminPasswordInput = it },
-                            singleLine = true,
-                            placeholder = { Text("رمز عبور یا کد مدیریت", fontSize = 12.sp) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val input = adminPasswordInput.trim()
-                            if (input == "Arman4237340" || input == "22858950" || input == prefs.savedPin) {
-                                isAdminMode = true
-                                prefs.isAdmin = true
-                                showAdminAuthDialog = false
-                                adminPasswordInput = ""
-                                Toast.makeText(context, "دسترسی مدیریت تایید شد", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "رمز عبور مدیریت نادرست است", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    ) {
-                        Text("تایید", color = AccentTeal, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showAdminAuthDialog = false
-                        adminPasswordInput = ""
-                    }) {
-                        Text("انصراف", color = TextSecondary)
-                    }
-                },
-                containerColor = NeumorphSurface,
-                shape = RoundedCornerShape(18.dp)
+                }
             )
         }
     }
 }
-
-@Preview(name = "Pin Screen - Neumorphic Light", showBackground = true, widthDp = 390, heightDp = 844)
-@Composable
-fun PinScreenPreview() {
-    AsanVpnTheme {
-        PinScreen(
-            isLoading = false,
-            errorMessage = null,
-            isSuccess = false,
-            onPinComplete = {}
-        )
-    }
-}
-

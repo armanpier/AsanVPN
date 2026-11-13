@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private var currentServerRemark by mutableStateOf("🇩🇪 DE2 (سرور پیشنهادی)")
     private var currentServerPing by mutableLongStateOf(48L)
     private var connectionState by mutableStateOf(ConnectionState.DISCONNECTED)
+    private var isDarkMode by mutableStateOf(false)
     private var isExpired by mutableStateOf(false)
     private var isPinLoading by mutableStateOf(false)
     private var isPinSuccess by mutableStateOf(false)
@@ -100,6 +101,7 @@ class MainActivity : ComponentActivity() {
         currentTrafficTotal = prefs.trafficTotalBytes
         currentServerRemark = prefs.selectedServerRemark
         currentServerPing = prefs.selectedServerPing
+        isDarkMode = prefs.isDarkMode
 
         handleIncomingIntent(intent)
 
@@ -161,7 +163,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            AsanVpnTheme {
+            AsanVpnTheme(isDark = isDarkMode) {
                 val savedPin = currentPinState
                 val (_, currentName) = remember { AppUpdateManager.getCurrentVersion(this@MainActivity) }
 
@@ -190,6 +192,11 @@ class MainActivity : ComponentActivity() {
                             lockoutUntil = prefs.lockoutUntil,
                             appVersion = currentName,
                             newVersionAvailable = availableUpdate?.versionName,
+                            isDarkMode = isDarkMode,
+                            onToggleTheme = {
+                                isDarkMode = !isDarkMode
+                                prefs.isDarkMode = isDarkMode
+                            },
                             onCheckUpdate = {
                                 triggerCheckForUpdate(manual = true)
                             },
@@ -236,6 +243,11 @@ class MainActivity : ComponentActivity() {
                             uploadSpeed = uploadSpeedState,
                             appVersion = currentName,
                             newVersionAvailable = availableUpdate?.versionName,
+                            isDarkMode = isDarkMode,
+                            onToggleTheme = {
+                                isDarkMode = !isDarkMode
+                                prefs.isDarkMode = isDarkMode
+                            },
                             onToggleConnect = {
                                 handleToggleConnect()
                             },

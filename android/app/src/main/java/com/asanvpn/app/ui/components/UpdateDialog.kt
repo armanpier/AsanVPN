@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +43,8 @@ fun UpdateDialog(
     onInstallApk: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LuxuryTheme.colors
+
     val animatedProgress by animateFloatAsState(
         targetValue = downloadProgress,
         label = "update_download_progress"
@@ -61,11 +64,9 @@ fun UpdateDialog(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-                .neumorphicRaised(shape = RoundedCornerShape(28.dp), elevation = 12.dp)
-                .background(NeumorphSurface, RoundedCornerShape(28.dp))
-                .border(1.dp, NeumorphBorderSubtle, RoundedCornerShape(28.dp))
-                .padding(24.dp)
+                .padding(horizontal = 4.dp)
+                .luxuryCushion(shape = RoundedCornerShape(28.dp), elevation = 12.dp)
+                .padding(22.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -76,21 +77,25 @@ fun UpdateDialog(
                 Box(
                     modifier = Modifier
                         .size(68.dp)
-                        .neumorphicRaised(shape = CircleShape, elevation = 6.dp)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(AccentCyanSoft, Color.White)
-                            ),
-                            CircleShape
-                        ),
+                        .luxuryWell(shape = CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (isDownloadComplete) Icons.Default.CheckCircle else Icons.Default.SystemUpdate,
-                        contentDescription = null,
-                        tint = if (isDownloadComplete) GreenConnected else AccentCoral,
-                        modifier = Modifier.size(36.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isDownloadComplete) colors.jadeGreen.copy(alpha = 0.2f) else colors.skyBlue.copy(alpha = 0.2f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isDownloadComplete) Icons.Default.CheckCircle else Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = if (isDownloadComplete) colors.jadeGreen else colors.skyBlue,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
 
                 // Title & Version Chip
@@ -101,21 +106,21 @@ fun UpdateDialog(
                     Text(
                         text = "به‌روزرسانی جدید موجود است",
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = TextPrimary,
+                        fontWeight = FontWeight.Black,
+                        color = colors.textPrimary,
                         textAlign = TextAlign.Center
                     )
 
                     Box(
                         modifier = Modifier
-                            .neumorphicSunken(shape = RoundedCornerShape(12.dp))
+                            .luxuryWell(shape = RoundedCornerShape(12.dp))
                             .padding(horizontal = 12.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "نسخه جدید ${versionInfo.versionName}",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentCoral
+                            fontWeight = FontWeight.ExtraBold,
+                            color = colors.skyBlue
                         )
                     }
                 }
@@ -125,25 +130,25 @@ fun UpdateDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .neumorphicSunken(shape = RoundedCornerShape(16.dp))
+                            .luxuryWell(shape = RoundedCornerShape(16.dp))
                             .padding(14.dp)
                     ) {
                         Column(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             val notes = versionInfo.releaseNotes?.takeIf { it.isNotBlank() }
-                                ?: "طراحی جدید و مدرن سفید سه‌بعدی، آیکون اختصاصی و ارتقای پایداری اتصال"
+                                ?: "طراحی جدید لوکس سه‌بعدی نرم (پورسلین و آبسیدین)، سرعت و پایداری ارتقا یافته"
 
                             Text(
                                 text = "تغییرات این نسخه:",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = colors.textPrimary
                             )
                             Text(
                                 text = notes,
                                 fontSize = 12.sp,
-                                color = TextSecondary,
+                                color = colors.textSecondary,
                                 lineHeight = 18.sp
                             )
                         }
@@ -152,7 +157,7 @@ fun UpdateDialog(
                     Text(
                         text = "آیا مایلید نسخه جدید هم‌اکنون به صورت مستقیم دریافت و نصب شود؟",
                         fontSize = 13.sp,
-                        color = TextPrimary,
+                        color = colors.textPrimary,
                         textAlign = TextAlign.Center,
                         lineHeight = 20.sp
                     )
@@ -163,7 +168,7 @@ fun UpdateDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .neumorphicSunken(shape = RoundedCornerShape(18.dp))
+                            .luxuryWell(shape = RoundedCornerShape(18.dp))
                             .padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -177,7 +182,7 @@ fun UpdateDialog(
                                 text = "در حال دانلود نسخه جدید...",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = colors.textPrimary
                             )
                             val computedRatio = if (totalMb > 0f) (downloadedMb / totalMb).coerceIn(0f, 1f) else 0f
                             val effectiveProgress = if (animatedProgress > 0.001f) animatedProgress else computedRatio
@@ -186,7 +191,7 @@ fun UpdateDialog(
                                 text = "$percent%",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = AccentCoral
+                                color = colors.skyBlue
                             )
                         }
 
@@ -200,8 +205,8 @@ fun UpdateDialog(
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
-                            color = AccentCoral,
-                            trackColor = Color(0xFFE2E8F0),
+                            color = colors.skyBlue,
+                            trackColor = colors.cushionShadowAmbient.copy(alpha = 0.2f),
                         )
 
                         // Size Info
@@ -210,7 +215,7 @@ fun UpdateDialog(
                         Text(
                             text = "$downloadedStr مگابایت از $totalStr مگابایت",
                             fontSize = 11.sp,
-                            color = TextSecondary
+                            color = colors.textSecondary
                         )
                     }
                 }
@@ -220,142 +225,93 @@ fun UpdateDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .neumorphicSunken(shape = RoundedCornerShape(16.dp))
-                            .padding(14.dp)
+                            .luxuryWell(shape = RoundedCornerShape(16.dp))
+                            .background(colors.jadeGreen.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+                            .padding(14.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "فایل نصبی نسخه جدید با موفقیت دریافت شد.\nبرای تکمیل به‌روزرسانی روی دکمه زیر ضربه بزنید.",
-                            fontSize = 12.sp,
-                            color = GreenConnected,
+                            text = "دانلود با موفقیت انجام شد. آماده نصب است.",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 18.sp,
-                            modifier = Modifier.fillMaxWidth()
+                            color = colors.jadeGreen,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
 
-                // Error Message if any
+                // Error Message
                 if (!downloadError.isNullOrBlank()) {
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(RedOff.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                            .border(1.dp, RedOff.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .luxuryWell(shape = RoundedCornerShape(14.dp))
+                            .background(colors.coralRed.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
+                            .padding(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = RedOff,
-                            modifier = Modifier.size(18.dp)
-                        )
                         Text(
-                            text = downloadError,
+                            text = "خطا در دانلود: $downloadError",
                             fontSize = 11.sp,
-                            color = RedOff
+                            color = colors.coralRed,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
 
-                // Action Buttons Row (Yes / No in Persian)
-                when {
-                    isDownloadComplete -> {
-                        Button(
-                            onClick = onInstallApk,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = GreenConnected
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (!versionInfo.forceUpdate && !isDownloading) {
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Text(
-                                text = "نصب نسخه جدید",
-                                fontSize = 14.sp,
+                                text = "بعداً",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+
+                    if (!isDownloading && !isDownloadComplete) {
+                        Button(
+                            onClick = onConfirmUpdate,
+                            modifier = Modifier.weight(1.5f),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.jadeGreen),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "دانلود و نصب",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                         }
                     }
-                    isDownloading -> {
-                        // User can cancel if not force update
-                        if (!versionInfo.forceUpdate) {
-                            TextButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Text(
-                                    text = "انصراف و بستن",
-                                    fontSize = 12.sp,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
-                    }
-                    else -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            // "No" Button (فعلاً نه)
-                            if (!versionInfo.forceUpdate) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 4.dp)
-                                        .background(NeumorphSurface, RoundedCornerShape(16.dp))
-                                        .border(1.dp, NeumorphBorderSubtle, RoundedCornerShape(16.dp))
-                                        .clickable { onDismiss() },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "فعلاً نه",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
 
-                            // "Yes" Button (بله، دانلود و نصب)
-                            Box(
-                                modifier = Modifier
-                                    .weight(1.3f)
-                                    .height(48.dp)
-                                    .neumorphicRaised(shape = RoundedCornerShape(16.dp), elevation = 6.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(AccentCoral, Color(0xFFFF8A73))
-                                        ),
-                                        RoundedCornerShape(16.dp)
-                                    )
-                                    .clickable { onConfirmUpdate() },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CloudDownload,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = "بله، به‌روزرسانی شود",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                            }
+                    if (isDownloadComplete) {
+                        Button(
+                            onClick = onInstallApk,
+                            modifier = Modifier.weight(1.5f),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.jadeGreen),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text(
+                                text = "نصب نسخه جدید",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
                         }
                     }
                 }

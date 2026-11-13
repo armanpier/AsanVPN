@@ -69,14 +69,14 @@ class PreferencesManager(context: Context) {
     }
 
     var trafficTotalBytes: Long
-        get() = prefs.getLong(KEY_TRAFFIC_TOTAL, 30L * 1024 * 1024 * 1024)
+        get() = prefs.getLong(KEY_TRAFFIC_TOTAL, 0L)
         set(value) = prefs.edit().putLong(KEY_TRAFFIC_TOTAL, value).apply()
 
     var trafficRemainingBytes: Long
         get() {
-            val total = prefs.getLong(KEY_TRAFFIC_TOTAL, 30L * 1024 * 1024 * 1024)
+            val total = prefs.getLong(KEY_TRAFFIC_TOTAL, 0L)
             if (total <= 0L) return -1L
-            return prefs.getLong(KEY_TRAFFIC_REMAINING, 25L * 1024 * 1024 * 1024)
+            return prefs.getLong(KEY_TRAFFIC_REMAINING, -1L)
         }
         set(value) = prefs.edit().putLong(KEY_TRAFFIC_REMAINING, value).apply()
 
@@ -134,6 +134,10 @@ class PreferencesManager(context: Context) {
             return prefs.getBoolean(KEY_IS_ADMIN, false)
         }
         set(value) = prefs.edit().putBoolean(KEY_IS_ADMIN, value).apply()
+
+    var isDarkMode: Boolean
+        get() = prefs.getBoolean("is_dark_mode", false)
+        set(value) = prefs.edit().putBoolean("is_dark_mode", value).apply()
 
     var lastGeoRulesCheckTime: Long
         get() = prefs.getLong(KEY_LAST_GEO_RULES_CHECK, 0L)
