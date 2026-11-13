@@ -357,7 +357,8 @@ export default {
         versionName: version,
         versionCode: versionCode,
         totalSize: totalSize,
-        downloadUrl: "https://asanvpn-worker.hi-deploy.workers.dev/download",
+        downloadUrl: "https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download",
+        fallbackUrl: "http://95.182.87.115/download",
         githubUrl: githubUrl,
         releaseNotes: changelog,
         publishedAt: Math.floor(Date.now() / 1000)
@@ -384,11 +385,17 @@ export default {
 
       const urlObj = new URL(request.url);
       const forceKv = urlObj.searchParams.get('source') === 'kv';
+      const domesticUrl = "https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download";
       const targetGithubUrl = (meta && meta.versionCode && meta.versionCode >= 18 && meta.github_url) || "https://github.com/armanpier/AsanVPN/releases/download/v1.3.12/AsanVPN-v1.3.12-universal.apk";
 
-      // If not explicitly forced to KV, 302 redirect for ultra-fast CDN download & zero KV usage
-      if (!forceKv) {
+      // If source=github is explicitly requested, redirect to GitHub
+      if (urlObj.searchParams.get('source') === 'github') {
         return Response.redirect(targetGithubUrl, 302);
+      }
+
+      // If not explicitly forced to KV, redirect to Iranian domestic high-speed ArvanCloud Edge (no VPN required, ping <20ms)
+      if (!forceKv) {
+        return Response.redirect(domesticUrl, 302);
       }
 
       if (!meta) {

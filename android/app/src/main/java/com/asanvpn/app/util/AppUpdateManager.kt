@@ -262,7 +262,7 @@ object AppUpdateManager {
 
     /**
      * Downloads APK file internally and provides download progress callbacks.
-     * Tries primary URL first, falls back to fallbackUrl if primary fails.
+     * Tries primary URL first, cascading through high-speed Iranian CDN, direct VPS, and GitHub.
      */
     suspend fun downloadApk(
         context: Context,
@@ -271,17 +271,28 @@ object AppUpdateManager {
         expectedTotalBytes: Long = 0L,
         onProgress: (progress: Float, downloadedMb: Float, totalMb: Float) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
-        val primaryRes = downloadFromSingleUrl(context, downloadUrl, expectedTotalBytes, onProgress)
-        if (primaryRes.isSuccess) {
-            return@withContext primaryRes
+        val candidates = linkedSetOf<String>()
+        if (downloadUrl.isNotBlank()) candidates.add(downloadUrl.trim())
+        if (!fallbackUrl.isNullOrBlank()) candidates.add(fallbackUrl.trim())
+        // Always include fast domestic Iranian edge and direct VPS for users without VPN
+        candidates.add("https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download")
+        candidates.add("http://95.182.87.115/download")
+        candidates.add("https://asanvpn-worker.hi-deploy.workers.dev/download")
+
+        var lastError: Throwable? = null
+        for ((index, candidate) in candidates.withIndex()) {
+            AppLogger.logAdmin("Attempting APK download [${index + 1}/${candidates.size}]: $candidate")
+            val res = downloadFromSingleUrl(context, candidate, expectedTotalBytes, onProgress)
+            if (res.isSuccess) {
+                AppLogger.logAdmin("APK download succeeded from: $candidate")
+                return@withContext res
+            } else {
+                lastError = res.exceptionOrNull()
+                AppLogger.logAdmin("Download candidate failed: $candidate -> ${lastError?.message}")
+            }
         }
 
-        if (!fallbackUrl.isNullOrBlank() && fallbackUrl != downloadUrl) {
-            AppLogger.logAdmin("Primary download failed, trying fallback URL: $fallbackUrl")
-            return@withContext downloadFromSingleUrl(context, fallbackUrl, expectedTotalBytes, onProgress)
-        }
-
-        primaryRes
+        Result.failure(lastError ?: Exception("خطا در برقراری ارتباط با سرور دانلود"))
     }
 
     private suspend fun downloadFromSingleUrl(
