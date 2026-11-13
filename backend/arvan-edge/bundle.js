@@ -1,7 +1,7 @@
 // ==========================================
 // AsanVPN Gateway on ArvanCloud Edge Computing
 // Dual-Cloud Primary (Cloudflare Worker) & VPS Fallback
-// OPSEC Hardened: Client Bootstrap Only (No Domestic Admin UI)
+// OPSEC Hardened: Stealth Protected Admin Dashboard & Client Bootstrap
 // ==========================================
 
 addEventListener('fetch', event => {
@@ -17,19 +17,70 @@ async function handleRequest(request) {
     return new Response(JSON.stringify({
       status: 'ok',
       service: 'AsanVPN ArvanCloud Edge Gateway',
-      pop: request.headers.get('X-Country-Code') || 'IR',
+      pop: (request.headers.get && request.headers.get('X-Country-Code')) || 'IR',
       time: new Date().toISOString()
     }), {
       headers: { 'content-type': 'application/json; charset=utf-8' }
     });
   }
 
-  // 2. OPSEC: Block Admin Dashboard UI on domestic Iranian edge
-  if (path === '/' || path === '/admin' || path === '/dashboard' || path === '/panel') {
+  // Read cookies and admin key for stealth authorization
+  let reqCookie = '';
+  try {
+    if (request.headers) {
+      if (typeof request.headers.get === 'function') {
+        reqCookie = request.headers.get('cookie') || request.headers.get('Cookie') || '';
+      } else {
+        reqCookie = request.headers['cookie'] || request.headers['Cookie'] || '';
+      }
+    }
+  } catch (_) {}
+
+  const queryKey = url.searchParams.get('key') || url.searchParams.get('token') || url.searchParams.get('auth') || '';
+  const isAuthorizedAdmin = (queryKey === 'Arman4237340') || reqCookie.includes('asan_edge_auth=Arman4237340');
+
+  // Handle logout
+  if (path === '/logout') {
+    const respHeaders = new Headers();
+    respHeaders.set('Set-Cookie', 'asan_edge_auth=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly');
+    respHeaders.set('Location', '/');
+    return new Response(null, { status: 302, headers: respHeaders });
+  }
+
+  // 2. Admin Dashboard with Stealth Protection
+  // If the admin provides the secret key or holds the authorized session cookie, serve the full Dashboard!
+  // If unauthenticated, return the neutral decoy response so domestic crawlers cannot detect the VPN dashboard.
+  if (path === '/' || path === '/admin' || path === '/dashboard' || path === '/panel' || path === '/portal') {
+    if (isAuthorizedAdmin) {
+      try {
+        const cfDashboardUrl = 'https://asanvpn-worker.hi-deploy.workers.dev/';
+        const cfHtmlResp = await fetch(cfDashboardUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AsanVPN-Edge/1.0',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        });
+        if (cfHtmlResp && cfHtmlResp.status === 200) {
+          const respHeaders = new Headers(cfHtmlResp.headers);
+          respHeaders.set('Content-Type', 'text/html; charset=utf-8');
+          respHeaders.set('Set-Cookie', 'asan_edge_auth=Arman4237340; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000');
+          respHeaders.set('X-Served-By', 'ArvanCloud-Edge');
+          return new Response(cfHtmlResp.body, {
+            status: 200,
+            headers: respHeaders
+          });
+        }
+      } catch (dashErr) {
+        console.error('Failed to proxy dashboard:', dashErr);
+      }
+    }
+
+    // Decoy Response for unauthenticated visitors / scanners / public
     return new Response(JSON.stringify({
       status: 'active',
       service: 'AsanVPN Edge Routing Gateway',
-      message: 'Admin Dashboard is disabled on domestic edge for OPSEC security. Access exclusively via Cloudflare Zero Trust or internal SSH tunnel.'
+      pop: (request.headers.get && request.headers.get('X-Country-Code')) || 'IR',
+      time: new Date().toISOString()
     }), {
       status: 200,
       headers: {
@@ -64,20 +115,9 @@ async function handleRequest(request) {
   if (path.startsWith('/api/')) {
     try {
       // OPSEC: Protect Admin API endpoints on domestic edge.
-      // Only internal worker sync requests possessing X-Edge-Secret may pass through ArvanEdge to VPS.
+      // Allow if request has valid edge secret, or valid admin token, or authorized admin cookie!
       const edgeSecretHeader = (request.headers.get && (request.headers.get('x-edge-secret') || request.headers.get('X-Edge-Secret'))) || '';
-      if (path.startsWith('/api/v1/admin/')) {
-        if (edgeSecretHeader !== 'asanvpn-edge-internal-secret-2026') {
-          return new Response(JSON.stringify({
-            error: 'Forbidden',
-            message: 'Administrative endpoints disabled on domestic edge gateway.'
-          }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json; charset=utf-8' }
-          });
-        }
-      }
-
+      
       let adminToken = '';
       try {
         if (request.headers) {
@@ -97,6 +137,22 @@ async function handleRequest(request) {
         adminToken = url.searchParams.get('token') || url.searchParams.get('admin_token') || '';
       }
 
+      if (path.startsWith('/api/v1/admin/')) {
+        const hasAuthCookie = reqCookie.includes('asan_edge_auth=Arman4237340');
+        const hasValidToken = (adminToken === 'Arman4237340');
+        const hasEdgeSecret = (edgeSecretHeader === 'asanvpn-edge-internal-secret-2026');
+
+        if (!hasAuthCookie && !hasValidToken && !hasEdgeSecret) {
+          return new Response(JSON.stringify({
+            error: 'Forbidden',
+            message: 'Administrative endpoints disabled on domestic edge gateway.'
+          }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' }
+          });
+        }
+      }
+
       // Preserve connecting client IP to prevent reverse-proxy wide rate limit lockouts
       const clientIp = (request.headers && (
         (typeof request.headers.get === 'function' ? (request.headers.get('ar-real-ip') || request.headers.get('x-real-ip') || request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for')) : (request.headers['ar-real-ip'] || request.headers['x-real-ip'] || request.headers['cf-connecting-ip'] || request.headers['x-forwarded-for']))
@@ -113,6 +169,8 @@ async function handleRequest(request) {
       };
       if (adminToken) {
         outgoingHeaders['X-Admin-Token'] = adminToken;
+      } else if (reqCookie.includes('asan_edge_auth=Arman4237340')) {
+        outgoingHeaders['X-Admin-Token'] = 'Arman4237340';
       }
       if (cleanClientIp) {
         outgoingHeaders['X-Forwarded-For'] = cleanClientIp;
@@ -131,7 +189,7 @@ async function handleRequest(request) {
       let response = null;
       let lastErr = null;
 
-      const isFromWorker = request.headers.get('x-from-worker') === '1' || request.headers.get('X-From-Worker') === '1';
+      const isFromWorker = request.headers.get && (request.headers.get('x-from-worker') === '1' || request.headers.get('X-From-Worker') === '1');
 
       if (isFromWorker) {
         // Direct to VPS without looping back to Cloudflare

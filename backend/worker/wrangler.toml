@@ -14,5 +14,5 @@ binding = "VPN_USERS"
 id = "aaf46b23b63c44a0a846911ea4b2aa19"
 
 [triggers]
-crons = ["0 */6 * * *"]
+crons = ["0 * * * *"]
 
