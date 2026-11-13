@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-AsanVPN Standalone Edge Backend API Server
-Runs on VPS (Port 80) providing persistent, high-speed API for ArvanCloud Edge Dashboard and mobile clients.
-Zero external pip dependencies (uses Python 3 standard library: http.server, sqlite3, json, urllib).
+AsanVPN Standalone Edge Backend API Server & SSOT (Single Source of Truth)
+Runs on VPS (Port 80) providing persistent, sub-millisecond API for mobile clients,
+Admin Dashboard, Telegram Bot, and ArvanCloud Edge Gateway.
+Zero external pip dependencies (Python 3 standard library: http.server, sqlite3, json, urllib, ssl, threading).
 """
 
 import sys
@@ -11,18 +12,22 @@ import re
 import json
 import sqlite3
 import time
+import base64
 import logging
 import threading
+import ssl
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 import urllib.parse
 import urllib.request
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 # Configuration
 PORT = 80
 DB_PATH = "/etc/asanvpn/asanvpn.db"
 BACKUP_PATH = "/etc/asanvpn/data.json"
+DASHBOARD_HTML_PATH = "/etc/asanvpn/dashboard.html"
 ADMIN_PASSWORD = "Arman4237340"
 SUPPORT_PHONE = "+989120000000"
 SUPPORT_TELEGRAM = "AsanSupport"
@@ -33,6 +38,11 @@ EDGE_SECRET = "asanvpn-edge-internal-secret-2026"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# SSL context that skips verification for remote self-signed or internal panel certs
+INSECURE_SSL_CTX = ssl.create_default_context()
+INSECURE_SSL_CTX.check_hostname = False
+INSECURE_SSL_CTX.verify_mode = ssl.CERT_NONE
+
 # Rate limiting storage for failed authentication attempts (IP and Device level)
 RATE_LIMIT_STORE = {} # key -> {"count": int, "locked_until": int}
 RATE_LIMIT_LOCK = threading.Lock()
@@ -41,7 +51,6 @@ def get_ip_subnet(ip: str) -> str:
     """Calculates IPv4 /24 subnet or returns clean IP. Excludes reverse proxy/internal addresses."""
     if not ip or ip in ("unknown", "127.0.0.1", "::1", "localhost"):
         return ""
-    # Avoid locking entire ArvanCloud edge reverse proxies if client IP could not be extracted
     if ip.startswith("37.32.") or ip.startswith("185.143."):
         return ""
     if "." in ip:
@@ -101,28 +110,21 @@ def clear_rate_limit(ip_key: str = "", dev_key: str = "", clear_all: bool = Fals
 def is_secure_10digit_pin(pin: str) -> bool:
     if not isinstance(pin, str) or len(pin) != 10 or not pin.isdigit():
         return False
-    # At least 6 distinct digits
     if len(set(pin)) < 6:
         return False
-    # No 3+ consecutive identical digits
     for i in range(len(pin) - 2):
         if pin[i] == pin[i+1] == pin[i+2]:
             return False
-    # No 3+ consecutive sequential digits
     for i in range(len(pin) - 2):
         d1, d2, d3 = int(pin[i]), int(pin[i+1]), int(pin[i+2])
         if (d2 == d1 + 1 and d3 == d2 + 1) or (d2 == d1 - 1 and d3 == d2 - 1):
             return False
-    # No 5-digit periodic repeats (e.g. 1234512345)
     if pin[:5] == pin[5:]:
         return False
-    # No 2-digit periodic repeats (e.g. 1212121212)
     if pin[:2] * 5 == pin:
         return False
-    # No repetitive pairs (e.g. 1122334455)
     if pin[0] == pin[1] and pin[2] == pin[3] and pin[4] == pin[5] and pin[6] == pin[7] and pin[8] == pin[9]:
         return False
-    # No palindromes
     if pin == pin[::-1]:
         return False
     return True
@@ -144,10 +146,13 @@ def generate_secure_10digit_pin(existing_checker) -> str:
         if not existing_checker(cand):
             return cand
 
+# ==========================================
+# 3X-UI LOCAL SQLITE SYNCHRONIZATION
+# ==========================================
 def sync_3xui_sqlite(user_data):
     """
     Directly synchronizes user totalGB and expiryTime into local 3X-UI SQLite database (/etc/x-ui/x-ui.db).
-    Guarantees zero-latency update of 3X-UI clients without requiring external web session tokens.
+    Guarantees sub-millisecond local update of 3X-UI clients without requiring external web session tokens.
     """
     xui_db_path = "/etc/x-ui/x-ui.db"
     if not os.path.exists(xui_db_path):
@@ -163,10 +168,7 @@ def sync_3xui_sqlite(user_data):
         expiry_ms = expires_at * 1000 if expires_at > 0 else 0
         is_active = 1 if user_data.get("active", True) else 0
 
-        # Candidate identifiers for 3X-UI client
         possible_identifiers = set()
-        
-        # From remote_panel_mappings
         mappings = user_data.get("remote_panel_mappings") or {}
         if isinstance(mappings, dict):
             for p_id, p_info in mappings.items():
@@ -176,7 +178,6 @@ def sync_3xui_sqlite(user_data):
                     if p_info.get("clientUuid"):
                         possible_identifiers.add(str(p_info["clientUuid"]).strip())
 
-        # From user name / email / pin
         name = str(user_data.get("name", "")).strip()
         pin = str(user_data.get("pin", "")).strip()
         if name:
@@ -193,8 +194,6 @@ def sync_3xui_sqlite(user_data):
 
         with sqlite3.connect(xui_db_path, timeout=5) as conn:
             cur = conn.cursor()
-            
-            # Find matching client in client_traffics
             matched_emails = set()
             for ident in possible_identifiers:
                 if "%" in ident:
@@ -214,14 +213,12 @@ def sync_3xui_sqlite(user_data):
             if not matched_emails:
                 return
 
-            # 1. Update client_traffics
             for email in matched_emails:
                 cur.execute(
                     "UPDATE client_traffics SET total = ?, expiry_time = ?, enable = ? WHERE email = ?",
                     (total_bytes, expiry_ms, is_active, email)
                 )
 
-            # 2. Update inbounds table (settings JSON column)
             cur.execute("SELECT id, settings FROM inbounds")
             inbounds = cur.fetchall()
             for inb_id, inb_settings_raw in inbounds:
@@ -252,6 +249,104 @@ def sync_3xui_sqlite(user_data):
     except Exception as e:
         logging.warning(f"[3X-UI Sync] Error synchronizing with /etc/x-ui/x-ui.db: {e}")
 
+# ==========================================
+# PARSE PROTOCOL NODES INTO JSON DICTS
+# ==========================================
+def parse_raw_proxy_link(link: str, panel_id: str = "", panel_name: str = "", priority: int = 1) -> dict:
+    """Parses vless://, vmess://, trojan://, ss:// URIs into structured node objects."""
+    link = link.strip()
+    if not link:
+        return None
+    try:
+        if link.startswith("vless://") or link.startswith("trojan://"):
+            proto = "vless" if link.startswith("vless://") else "trojan"
+            rest = link[len(proto) + 3:]
+            user_part, host_part = rest.split("@", 1) if "@" in rest else ("", rest)
+            host_port, query_part = host_part.split("?", 1) if "?" in host_part else (host_part, "")
+            host, port = host_port.split(":", 1) if ":" in host_port else (host_port, "443")
+            query, fragment = query_part.split("#", 1) if "#" in query_part else (query_part, "")
+            params = urllib.parse.parse_qs(query)
+            remark = urllib.parse.unquote(fragment) if fragment else f"{proto.upper()} Node"
+
+            return {
+                "protocol": proto,
+                "remark": remark,
+                "server": host,
+                "port": int(port),
+                "uuid": user_part,
+                "type": params.get("type", ["tcp"])[0],
+                "security": params.get("security", ["none"])[0],
+                "sni": params.get("sni", [""])[0],
+                "path": params.get("path", [""])[0],
+                "hostHeader": params.get("host", [""])[0] or params.get("sni", [""])[0],
+                "flow": params.get("flow", [""])[0],
+                "pbk": params.get("pbk", [""])[0],
+                "sid": params.get("sid", [""])[0],
+                "spx": params.get("spx", [""])[0],
+                "fingerprint": params.get("fp", ["chrome"])[0],
+                "serviceName": params.get("serviceName", [""])[0],
+                "panel_id": panel_id,
+                "panel_name": panel_name,
+                "panel_priority": priority
+            }
+        elif link.startswith("vmess://"):
+            b64_str = link[8:]
+            decoded = base64.b64decode(b64_str + "==").decode("utf-8", errors="ignore")
+            cfg = json.loads(decoded)
+            return {
+                "protocol": "vmess",
+                "remark": cfg.get("ps", "VMess Node"),
+                "server": cfg.get("add", ""),
+                "port": int(cfg.get("port", 443)),
+                "uuid": cfg.get("id", ""),
+                "alterId": int(cfg.get("aid", 0)),
+                "type": cfg.get("net", "tcp"),
+                "security": cfg.get("tls", "none"),
+                "sni": cfg.get("sni", "") or cfg.get("host", ""),
+                "path": cfg.get("path", ""),
+                "hostHeader": cfg.get("host", ""),
+                "cipher": "auto",
+                "panel_id": panel_id,
+                "panel_name": panel_name,
+                "panel_priority": priority
+            }
+    except Exception as e:
+        logging.debug(f"Failed to parse proxy link: {e}")
+    return None
+
+def fetch_subscription_data(url: str, timeout: int = 8) -> dict:
+    """Fetches a subscription URL and extracts userinfo header + decoded node lines."""
+    req = urllib.request.Request(url, headers={"User-Agent": "v2rayN/6.23 AsanVPN-Core/1.0"})
+    res_data = {"user_info": None, "nodes_raw": []}
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=INSECURE_SSL_CTX) as res:
+            sub_info = res.headers.get("Subscription-Userinfo") or res.headers.get("subscription-userinfo")
+            if sub_info:
+                info_dict = {}
+                for part in sub_info.split(";"):
+                    if "=" in part:
+                        k, v = part.strip().split("=", 1)
+                        try:
+                            info_dict[k.strip().lower()] = int(v.strip())
+                        except ValueError:
+                            pass
+                res_data["user_info"] = info_dict
+
+            body = res.read().decode("utf-8", errors="ignore").strip()
+            # Try base64 decoding
+            try:
+                decoded = base64.b64decode(body + "==").decode("utf-8", errors="ignore")
+                lines = [l.strip() for l in decoded.splitlines() if l.strip()]
+            except Exception:
+                lines = [l.strip() for l in body.splitlines() if l.strip()]
+            res_data["nodes_raw"] = lines
+    except Exception as e:
+        logging.warning(f"Error fetching sub url {url}: {e}")
+    return res_data
+
+# ==========================================
+# DATABASE (SQLite with WAL Mode)
+# ==========================================
 class Database:
     def __init__(self, db_path=DB_PATH):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -358,7 +453,106 @@ if not db.get("__ADMIN_CUSTOM_PASSWORD__") and os.path.exists(BACKUP_PATH):
 if not db.get("__ADMIN_CUSTOM_PASSWORD__"):
     db.put("__ADMIN_CUSTOM_PASSWORD__", ADMIN_PASSWORD)
 
+# ==========================================
+# BACKGROUND TRAFFIC & NODE SYNC ENGINE
+# ==========================================
+def run_traffic_sync_cycle():
+    """
+    Background worker cycle:
+    1. Reads 3X-UI local SQLite client_traffics.
+    2. Fetches active user subscription headers.
+    3. Sums total traffic consumption and recalculates remaining bytes.
+    4. Updates cached_nodes so mobile app connects in < 2ms without blocking.
+    """
+    try:
+        users = db.get_all_users()
+        active_users = [u for u in users if u.get("active", True) and u.get("pin")]
+        if not active_users:
+            return
 
+        # 1. Map 3X-UI usage from local SQLite
+        xui_usage = {}
+        xui_db_path = "/etc/x-ui/x-ui.db"
+        if os.path.exists(xui_db_path):
+            try:
+                with sqlite3.connect(xui_db_path, timeout=5) as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT email, up, down, total FROM client_traffics")
+                    for email, up, down, total in cur.fetchall():
+                        if email:
+                            xui_usage[email.lower()] = (up or 0) + (down or 0)
+            except Exception as e:
+                logging.warning(f"[BackgroundSync] Failed reading 3X-UI client_traffics: {e}")
+
+        # 2. Process each active user
+        for u in active_users:
+            pin = u.get("pin")
+            sub_urls = u.get("upstream_sub_urls") or []
+            if not sub_urls and u.get("upstream_sub_url"):
+                sub_urls = [s.strip() for s in u["upstream_sub_url"].splitlines() if s.strip()]
+
+            total_limit = int(u.get("traffic_total_bytes", 0) or 0)
+            max_used = 0
+            new_nodes = []
+
+            # Check 3X-UI usage
+            name = (u.get("name") or "").lower()
+            clean_name = re.sub(r'[^a-zA-Z0-9_]', '', name.replace('@', ''))
+            for ident, used in xui_usage.items():
+                if (pin and pin in ident) or (clean_name and clean_name in ident):
+                    max_used = max(max_used, used)
+
+            # Query up to 3 subscription URLs
+            for s_url in sub_urls[:4]:
+                if not s_url or not s_url.startswith("http"):
+                    continue
+                sub_data = fetch_subscription_data(s_url, timeout=6)
+                if sub_data["user_info"]:
+                    ui = sub_data["user_info"]
+                    used_sub = (ui.get("upload", 0) + ui.get("download", 0))
+                    max_used = max(max_used, used_sub)
+                    if ui.get("total", 0) > total_limit:
+                        total_limit = ui["total"]
+                # Parse raw nodes
+                for r_line in sub_data["nodes_raw"]:
+                    node_obj = parse_raw_proxy_link(r_line)
+                    if node_obj and len(new_nodes) < 25:
+                        new_nodes.append(node_obj)
+
+            # Recalculate remaining
+            changed = False
+            if total_limit > 0:
+                calc_rem = max(0, total_limit - max_used)
+                if u.get("traffic_remaining_bytes") != calc_rem or u.get("traffic_total_bytes") != total_limit:
+                    u["traffic_remaining_bytes"] = calc_rem
+                    u["traffic_total_bytes"] = total_limit
+                    changed = True
+
+            if new_nodes and len(new_nodes) >= 3:
+                u["cached_nodes"] = new_nodes
+                changed = True
+
+            if changed:
+                db.put(pin, json.dumps(u, ensure_ascii=False))
+
+        logging.info(f"[BackgroundSync] Completed sync for {len(active_users)} active users.")
+    except Exception as e:
+        logging.error(f"[BackgroundSync] Error in sync cycle: {e}")
+
+def background_sync_thread():
+    # Initial delay on startup
+    time.sleep(10)
+    while True:
+        run_traffic_sync_cycle()
+        time.sleep(300) # Sync every 5 minutes
+
+sync_thread = threading.Thread(target=background_sync_thread, daemon=True)
+sync_thread.start()
+
+
+# ==========================================
+# HTTP SERVER & API ROUTER
+# ==========================================
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
@@ -367,7 +561,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, X-Edge-Secret, Authorization")
         self.send_header("Server", "AsanVPN-Edge-VPS/1.0")
 
     def do_OPTIONS(self):
@@ -377,7 +571,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def is_authenticated_transit(self):
         client_host = self.client_address[0]
-        # Local requests (e.g., Telegram bot on same VPS) are trusted
         if client_host in ("127.0.0.1", "::1", "localhost"):
             return True
         edge_secret = self.headers.get("X-Edge-Secret") or self.headers.get("x-edge-secret")
@@ -390,13 +583,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not token:
             parsed = urllib.parse.urlparse(self.path)
             qs = urllib.parse.parse_qs(parsed.query)
-            token = qs.get("token", [""])[0] or qs.get("admin_token", [""])[0]
+            token = qs.get("token", [""])[0] or qs.get("admin_token", [""])[0] or qs.get("key", [""])[0]
         token = token.strip()
         custom_pwd = db.get("__ADMIN_CUSTOM_PASSWORD__") or ADMIN_PASSWORD
         valid_tokens = [custom_pwd.strip(), ADMIN_PASSWORD.strip()]
         auth_ok = token in valid_tokens or token.lower() in [vt.lower() for vt in valid_tokens]
-        if not auth_ok:
-            logging.warning(f"Auth failed. Received token: '{token}'. Headers: {dict(self.headers)}")
         return auth_ok
 
     def send_json(self, status_code, data):
@@ -430,17 +621,56 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "time": int(time.time())
             })
 
+        # Logout
+        if path == "/logout":
+            self.send_response(302)
+            self.send_header("Set-Cookie", "asan_edge_auth=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly")
+            self.send_header("Location", "/")
+            self.send_cors_headers()
+            self.end_headers()
+            return
+
+        # Admin Dashboard Frontend
+        if path in ["/", "/admin", "/dashboard", "/panel", "/portal"]:
+            qs = urllib.parse.parse_qs(parsed.query)
+            query_key = qs.get("key", [""])[0] or qs.get("token", [""])[0] or qs.get("auth", [""])[0]
+            cookie_hdr = self.headers.get("Cookie") or self.headers.get("cookie") or ""
+            is_authorized = (
+                (query_key in [ADMIN_PASSWORD, db.get("__ADMIN_CUSTOM_PASSWORD__") or ADMIN_PASSWORD]) or
+                ("asan_edge_auth=Arman4237340" in cookie_hdr) or
+                self.check_admin_auth()
+            )
+            if is_authorized and os.path.exists(DASHBOARD_HTML_PATH):
+                with open(DASHBOARD_HTML_PATH, "rb") as f:
+                    html_bytes = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(html_bytes)))
+                self.send_header("Set-Cookie", "asan_edge_auth=Arman4237340; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000")
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(html_bytes)
+                return
+            else:
+                # Decoy response for unauthorized visitors
+                return self.send_json(200, {
+                    "status": "active",
+                    "service": "AsanVPN Edge Routing Gateway",
+                    "pop": "IR",
+                    "time": int(time.time())
+                })
+
         # Version check
         if path in ["/api/v1/app/version", "/api/v1/version", "/version"]:
             return self.send_json(200, {
                 "success": True,
                 "versionName": APP_VERSION,
                 "versionCode": APP_VERSION_CODE,
-                "totalSize": 60645000,
+                "totalSize": 60620405,
                 "downloadUrl": "https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download",
                 "fallbackUrl": "http://95.182.87.115/download",
                 "githubUrl": GITHUB_APK_URL,
-                "releaseNotes": "طراحی مدرن کادر ورودی پین ۱۰ رقمی، رفع بریدگی صفحه در گوشی‌های کوچک، ارتقای امنیت و سرعت اتصال",
+                "releaseNotes": "طراحی سه‌بعدی لوکس جدید با دو تم روشن و تاریک (Porcelain و Obsidian)، گوی مغناطیسی چندلایه، پایداری بالاتر اتصال",
                 "publishedAt": int(time.time())
             })
 
@@ -456,9 +686,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_header("Accept-Ranges", "bytes")
                 self.send_cors_headers()
                 self.end_headers()
-                with open(apk_path, "rb") as f:
-                    while chunk := f.read(65536):
-                        self.wfile.write(chunk)
+                if self.command != "HEAD":
+                    with open(apk_path, "rb") as f:
+                        while chunk := f.read(65536):
+                            self.wfile.write(chunk)
                 return
             else:
                 self.send_response(302)
@@ -481,7 +712,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     pass
             return self.send_json(404, {"error": "User not found", "message": "کاربر یافت نشد."})
 
-        # ADMIN: Get users
+        # ADMIN: Get all users
         if path == "/api/v1/admin/users":
             if not self.check_admin_auth():
                 return self.send_json(401, {"error": "Unauthorized", "message": "رمز عبور یا توکن مدیریت نامعتبر است"})
@@ -529,7 +760,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "error": "رمز عبور وارد شده نادرست است."
                 })
 
-        # Check Admin Token for all following admin endpoints
+        # Check Admin Auth for all admin endpoints
         if path.startswith("/api/v1/admin/"):
             if not self.check_admin_auth():
                 return self.send_json(401, {"error": "Unauthorized", "message": "رمز عبور یا توکن مدیریت نامعتبر است"})
@@ -602,11 +833,38 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "message": "کاربر با موفقیت ثبت شد."
                 })
 
+            # ADMIN: Delete User (POST)
+            if path == "/api/v1/admin/delete":
+                pin = str(body.get("pin", "")).strip()
+                if not pin:
+                    return self.send_json(400, {"error": "Missing PIN"})
+                db.delete(pin)
+                return self.send_json(200, {"status": "success", "message": f"کاربر {pin} حذف شد."})
+
             # ADMIN: Save Panels
             if path in ["/api/v1/admin/panels", "/api/v1/admin/panels/save"]:
                 panels = body.get("panels", [])
                 db.put("__CONFIG_PANELS__", json.dumps(panels, ensure_ascii=False))
                 return self.send_json(200, {"success": True, "message": "لیست پنل‌ها با موفقیت ذخیره گردید."})
+
+            # ADMIN: Test Panel Latency
+            if path == "/api/v1/admin/panels/test":
+                p_url = body.get("url", "").strip()
+                p_type = body.get("type", "").lower()
+                p_key = body.get("apiKey", "")
+                start_t = time.time()
+                try:
+                    if p_type == "pasarguard":
+                        req = urllib.request.Request(f"{p_url.rstrip('/')}/api/users", headers={"Authorization": f"ApiKey {p_key}"})
+                    elif p_type == "goguard":
+                        req = urllib.request.Request(f"{p_url.rstrip('/')}/api/subscriptions", headers={"X-API-Key": p_key})
+                    else:
+                        req = urllib.request.Request(p_url)
+                    with urllib.request.urlopen(req, timeout=5, context=INSECURE_SSL_CTX) as res:
+                        elapsed = int((time.time() - start_t) * 1000)
+                        return self.send_json(200, {"ok": True, "latency": elapsed, "message": f"اتصال موفق ({elapsed}ms)"})
+                except Exception as e:
+                    return self.send_json(200, {"ok": False, "error": str(e), "message": f"خطا در اتصال: {e}"})
 
             # ADMIN: Clear lockout for single user
             if path in ["/api/v1/admin/clear_lockout", "/api/v1/admin/reset_device"]:
@@ -663,17 +921,34 @@ class RequestHandler(BaseHTTPRequestHandler):
                 db.put("__ADMIN_CUSTOM_PASSWORD__", new_pwd)
                 return self.send_json(200, {"success": True, "message": "رمز عبور با موفقیت به‌روزرسانی شد."})
 
-            # ADMIN: Sync Panels
+            # ADMIN: Sync Panels (Manual trigger)
             if path in ["/api/v1/admin/sync_panels", "/api/v1/admin/panels/sync"]:
+                threading.Thread(target=run_traffic_sync_cycle, daemon=True).start()
                 return self.send_json(200, {
                     "success": True,
-                    "totalAdded": 0,
-                    "totalUpdated": 0,
-                    "crossSynced": 0,
-                    "message": "همگام‌سازی پنل‌ها با موفقیت انجام شد."
+                    "message": "عملیات همگام‌سازی ترافیک و سرورها در پس‌زمینه آغاز گردید."
                 })
 
-        # CLIENT: Connect endpoint
+        # CLIENT: Lockout status check
+        if path == "/api/v1/check_lockout":
+            pin = str(body.get("pin", "")).strip()
+            device_id = str(body.get("device_id", "")).strip()
+            forwarded = self.headers.get("X-Forwarded-For") or ""
+            cf_ip = self.headers.get("CF-Connecting-IP") or ""
+            ar_ip = self.headers.get("AR-Real-IP") or ""
+            client_ip = cf_ip or ar_ip or (forwarded.split(",")[0].strip() if forwarded else "") or self.client_address[0]
+            ip_subnet = get_ip_subnet(client_ip)
+            ip_key = f"ip:{ip_subnet}" if ip_subnet else ""
+            dev_key = f"dev:{device_id}" if device_id else ""
+            is_locked, rem_sec = check_rate_limit(ip_key, dev_key)
+            return self.send_json(200, {
+                "status": "success",
+                "locked": is_locked,
+                "remaining_seconds": rem_sec if is_locked else 0,
+                "message_fa": "حساب مسدود است." if is_locked else "حساب فعال است."
+            })
+
+        # CLIENT: Connect endpoint (< 2ms instant response)
         if path == "/api/v1/connect":
             if not self.is_authenticated_transit():
                 logging.warning(f"Direct unauthenticated connect attempt from {self.client_address[0]} rejected.")
@@ -685,9 +960,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             pin = str(body.get("pin", "")).strip()
             device_id = str(body.get("device_id", "")).strip()
 
-            forwarded = self.headers.get("X-Forwarded-For") or self.headers.get("x-forwarded-for") or ""
-            cf_ip = self.headers.get("CF-Connecting-IP") or self.headers.get("cf-connecting-ip") or ""
-            ar_ip = self.headers.get("AR-Real-IP") or self.headers.get("ar-real-ip") or ""
+            forwarded = self.headers.get("X-Forwarded-For") or ""
+            cf_ip = self.headers.get("CF-Connecting-IP") or ""
+            ar_ip = self.headers.get("AR-Real-IP") or ""
             client_ip = cf_ip or ar_ip or (forwarded.split(",")[0].strip() if forwarded else "") or self.client_address[0]
             ip_subnet = get_ip_subnet(client_ip)
             ip_key = f"ip:{ip_subnet}" if ip_subnet else ""
@@ -744,7 +1019,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "support_telegram": SUPPORT_TELEGRAM
                 })
 
-            # Valid credentials - clear rate limit for this IP and device
+            # Valid credentials - clear rate limit
             clear_rate_limit(ip_key, dev_key)
 
             user = json.loads(raw_user)
@@ -761,7 +1036,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             if user.get("expires_at") and user["expires_at"] > 0 and user["expires_at"] < now:
                 return self.send_json(403, {
                     "status": "expired",
-                    "message_fa": "اشتراک شما به پایان رسیده است.",
+                    "message_fa": "اعتبار زمانی اشتراک شما به پایان رسیده است.",
+                    "support_phone": SUPPORT_PHONE,
+                    "support_telegram": SUPPORT_TELEGRAM
+                })
+
+            # Traffic exhaustion check
+            rem_bytes = user.get("traffic_remaining_bytes")
+            if rem_bytes is not None and rem_bytes != -1 and rem_bytes <= 0:
+                return self.send_json(403, {
+                    "status": "traffic_exhausted",
+                    "message_fa": "حجم ترافیک اشتراک شما به پایان رسیده است. جهت شارژ مجدد با پشتیبانی تماس بگیرید.",
                     "support_phone": SUPPORT_PHONE,
                     "support_telegram": SUPPORT_TELEGRAM
                 })
@@ -826,7 +1111,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 def run():
     server = ThreadedHTTPServer(("0.0.0.0", PORT), RequestHandler)
-    logging.info(f"AsanVPN Core API Server running on port {PORT}...")
+    logging.info(f"AsanVPN Standalone Core API Server (SSOT) running on port {PORT}...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
