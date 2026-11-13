@@ -60,7 +60,7 @@ fun ConnectScreen(
     uploadTraffic: String = "۰ B",
     downloadSpeed: String = "",
     uploadSpeed: String = "",
-    appVersion: String = "1.3.11",
+    appVersion: String = "1.3.12",
     newVersionAvailable: String? = null,
     isDarkMode: Boolean = false,
     onToggleTheme: () -> Unit = {},

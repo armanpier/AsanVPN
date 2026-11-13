@@ -2627,13 +2627,13 @@ async def send_download_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
 
     support_username = await db.get_setting("support_username", "@Asanvpnsupport_bot")
-    universal_apk_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.3.5/AsanVPN-v1.3.5-universal.apk")
-    cdn_download_url = "https://asanvpn-worker.hi-deploy.workers.dev/download"
+    universal_apk_url = await db.get_setting("app_download_url", "https://github.com/armanpier/AsanVPN/releases/download/v1.3.12/AsanVPN-v1.3.12-universal.apk")
+    cdn_download_url = "https://asanvpn-dashboard.armanpier-oxvrx.arvanedge.ir/download"
 
     text = (
-        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.3.5)</b>\n"
+        "📱 <b>دانلود نرم‌افزار رسمی آسان وی‌پی‌ان (نسخه جدید v1.3.12)</b>\n"
         "✦ ━━━━━━━━━━━━━━━━━ ✦\n\n"
-        "✨ <b>طراحی مدرن سفید سه‌بعدی و آیکون رسمی جدید</b>\n"
+        "✨ <b>طراحی سه‌بعدی لوکس با دو تم روشن و تاریک (Porcelain و Obsidian)</b>\n"
         "📦 <b>نسخه همگانی (Universal APK) — سازگار با ۱۰۰٪ دستگاه‌ها</b>\n\n"
         "🔹 <b>امکانات و قابلیت‌های نسخه جدید:</b>\n"
         "• <b>تست تاخیر واقعی (Real Delay):</b> سنجش دقیق پینگ سرورها قبل از برقراری ارتباط برای تضمین نهایت سرعت\n"

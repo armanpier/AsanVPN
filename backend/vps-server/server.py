@@ -26,9 +26,9 @@ BACKUP_PATH = "/etc/asanvpn/data.json"
 ADMIN_PASSWORD = "Arman4237340"
 SUPPORT_PHONE = "+989120000000"
 SUPPORT_TELEGRAM = "AsanSupport"
-APP_VERSION = "1.3.11"
-APP_VERSION_CODE = 17
-GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.11/AsanVPN-v1.3.11-universal.apk"
+APP_VERSION = "1.3.12"
+APP_VERSION_CODE = 18
+GITHUB_APK_URL = "https://github.com/armanpier/AsanVPN/releases/download/v1.3.12/AsanVPN-v1.3.12-universal.apk"
 EDGE_SECRET = "asanvpn-edge-internal-secret-2026"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
