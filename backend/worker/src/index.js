@@ -81,6 +81,15 @@ function updateCachedUserRecord(pin, user) {
 }
 
 async function safeKvPut(env, key, value, options) {
+  // Never write transient rate-limit keys to KV (saves 500+ writes/day)
+  if (typeof key === 'string' && (key.startsWith('rl:') || key.startsWith('rl_') || key.startsWith('rl'))) {
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      memoryUserCache.set(key, { data: parsed, exp: Date.now() + 3600000 });
+    } catch (_) {}
+    return true;
+  }
+
   // 1. Always update in-memory cache for fast lookups
   try {
     if (/^(\d{8}|\d{10})$/.test(key)) {
@@ -109,6 +118,10 @@ async function safeKvPut(env, key, value, options) {
 }
 
 async function safeKvDelete(env, key) {
+  if (typeof key === 'string' && (key.startsWith('rl:') || key.startsWith('rl_') || key.startsWith('rl'))) {
+    memoryUserCache.delete(key);
+    return true;
+  }
   try {
     await env.VPN_USERS.delete(key);
     memoryUserCache.delete(key);
@@ -447,6 +460,46 @@ export default {
 
     const supportPhone = env.DEFAULT_SUPPORT_PHONE || '+989120000000';
     const supportTelegram = env.SUPPORT_TELEGRAM || 'AsanSupport';
+
+    // -------------------------------------------------------------
+    // ZERO-KV PROXY: Forward all /api/* requests to VPS SSOT Primary
+    // (Bypasses all Cloudflare KV limits, CPU limits, and rate limits)
+    // -------------------------------------------------------------
+    if (path.startsWith('/api/') && path !== '/api/debug-headers' && path !== '/api/v1/app/version' && path !== '/api/v1/version' && path !== '/version') {
+      try {
+        const vpsUrl = new URL(url.pathname + url.search, 'http://95.182.87.115.sslip.io');
+        const outgoingHeaders = new Headers(request.headers);
+        outgoingHeaders.set('X-Edge-Secret', 'asanvpn-edge-internal-secret-2026');
+        
+        const clientIp = request.headers.get('cf-connecting-ip') || 
+                         request.headers.get('x-real-ip') || 
+                         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+        if (clientIp) {
+          outgoingHeaders.set('CF-Connecting-IP', clientIp);
+          outgoingHeaders.set('X-Forwarded-For', clientIp);
+        }
+
+        const vpsResp = await fetch(vpsUrl.toString(), {
+          method: request.method,
+          headers: outgoingHeaders,
+          body: ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer()
+        });
+
+        if (vpsResp && vpsResp.status >= 200 && vpsResp.status < 500) {
+          const respHeaders = new Headers(vpsResp.headers);
+          respHeaders.set('Access-Control-Allow-Origin', '*');
+          respHeaders.set('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token, X-Edge-Secret');
+          respHeaders.set('X-Served-By', 'AsanVPN-Proxy-VPS');
+          return new Response(vpsResp.body, {
+            status: vpsResp.status,
+            statusText: vpsResp.statusText,
+            headers: respHeaders
+          });
+        }
+      } catch (proxyErr) {
+        console.warn('Proxy to VPS failed, falling back to KV:', proxyErr.message);
+      }
+    }
 
     try {
       // -------------------------------------------------------------
@@ -1707,6 +1760,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(PanelManager.syncAllPanels(env));
+    // Disabled: VPS server.py background loop handles panel sync as SSOT without burning Cloudflare KV quota
+    return;
   }
 };
